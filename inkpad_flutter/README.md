@@ -31,7 +31,8 @@ flutter test
 
 Done:
 - Document model: layers, paths, groups, fill, stroke, opacity
-- Tools: select / move / node & handle editing, pen, rectangle, oval, star,
+- Tools: select / move / node & handle editing, pen, add/delete point
+  (Alt-click converts corner/smooth), rectangle, oval, star,
   polygon, line, hand
 - Pan & zoom: pinch, trackpad, ctrl/cmd + scroll wheel, space-drag, middle mouse
 - Undo/redo, duplicate, group/ungroup, arrange, layers (add, delete, hide, lock)
@@ -45,14 +46,14 @@ To port next (roughly in priority order):
 - Gradients and fill transforms (`WDGradient`, `WDFillTransform`)
 - Boolean path operations (`WDPathfinder` / livarot). Note: livarot comes from
   Inkscape; check its license before porting it rather than reimplementing.
-- Freehand tool with curve fitting (`CurveFit`), scissors, eraser, add/delete anchor
+- Freehand tool with curve fitting (`CurveFit`), scissors, eraser
 - Text and text-on-path, images, shadows, arrowheads, dash patterns UI
 - Snapping (grid, points, edges), rulers, PDF/PNG export
 - Full color picker
 
 ## Keyboard shortcuts
 
-V select · P pen · R rect · E oval · S star · G polygon · L line · H hand ·
+V select · P pen · A add/delete point · R rect · E oval · S star · G polygon · L line · H hand ·
 Ctrl/Cmd+Z undo · Shift+Ctrl/Cmd+Z redo · Ctrl/Cmd+D duplicate ·
 Ctrl/Cmd+G group · Shift+Ctrl/Cmd+G ungroup · Ctrl/Cmd+S save · Ctrl/Cmd+O open ·
 Ctrl/Cmd+E export SVG · Delete remove · Esc/Enter finish path ·

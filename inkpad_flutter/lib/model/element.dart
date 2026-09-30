@@ -237,13 +237,67 @@ class InkPath extends InkElement {
   /// Inserts an anchor at parameter [t] of segment [segmentIndex], keeping
   /// the curve shape unchanged. Ported from -[WDPath addAnchorAtPoint:].
   void insertAnchor(int segmentIndex, double t) {
-    final segs = segments.toList();
-    final (left, right) = segs[segmentIndex].splitAt(t);
+    final seg = segments.elementAt(segmentIndex);
+    if (seg.isStraight) {
+      // Keep straight segments straight, with no handles on the new point.
+      nodes.insert(segmentIndex + 1, BezierNode.anchor(seg.pointAt(t)));
+      return;
+    }
+    final (left, right) = seg.splitAt(t);
     final i0 = segmentIndex, i1 = (segmentIndex + 1) % nodes.length;
     final n0 = nodes[i0], n1 = nodes[i1];
     nodes[i0] = BezierNode(n0.inPoint, n0.anchorPoint, left.outA);
     nodes[i1] = BezierNode(right.inB, n1.anchorPoint, n1.outPoint);
     nodes.insert(segmentIndex + 1, BezierNode(left.inB, left.b, right.outA));
+  }
+
+  /// Index of the anchor within [tolerance] of [pt], or null.
+  int? anchorIndexAt(Offset pt, double tolerance) {
+    for (var i = 0; i < nodes.length; i++) {
+      if ((nodes[i].anchorPoint - pt).distance <= tolerance) return i;
+    }
+    return null;
+  }
+
+  /// The segment index and curve parameter of the edge point closest to
+  /// [pt], if it is within [tolerance].
+  (int, double)? edgeHit(Offset pt, double tolerance) {
+    (int, double)? best;
+    var bestD = tolerance;
+    for (final (i, s) in segments.indexed) {
+      final (d, t) = s.closestPoint(pt);
+      if (d <= bestD) {
+        bestD = d;
+        best = (i, t);
+      }
+    }
+    return best;
+  }
+
+  /// Removes the anchor at [index]. Like Inkpad, a path keeps at least
+  /// two anchors. Returns false if the anchor couldn't be removed.
+  bool deleteAnchor(int index) {
+    if (nodes.length <= 2) return false;
+    nodes.removeAt(index);
+    return true;
+  }
+
+  /// Toggles an anchor between corner and smooth.
+  /// Ported from -[WDPath convertNode:whichPoint:]: a node with handles loses
+  /// them; a node without handles gets smooth handles parallel to the line
+  /// between its neighbours, a quarter of that distance long.
+  void convertAnchor(int index) {
+    final node = nodes[index];
+    if (node.hasInPoint || node.hasOutPoint) {
+      nodes[index] = node.chopHandles();
+      return;
+    }
+    final wrap = closed && nodes.length > 2;
+    final prev = index > 0 ? nodes[index - 1] : (wrap ? nodes.last : node);
+    final next = index < nodes.length - 1 ? nodes[index + 1] : (wrap ? nodes.first : node);
+    final v = next.anchorPoint - prev.anchorPoint;
+    final handle = normalize(v) * (v.distance / 4);
+    nodes[index] = BezierNode(node.anchorPoint - handle, node.anchorPoint, node.anchorPoint + handle);
   }
 
   void reverse() {

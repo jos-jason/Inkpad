@@ -28,6 +28,7 @@ class _EditorPageState extends State<EditorPage> {
   late final List<_ToolEntry> tools = [
     _ToolEntry(controller.tool, Icons.near_me_outlined, 'V'),
     _ToolEntry(PenTool(), Icons.edit_outlined, 'P'),
+    _ToolEntry(AnchorTool(), Icons.control_point, 'A'),
     _ToolEntry(ShapeTool(ShapeKind.rectangle), Icons.crop_square, 'R'),
     _ToolEntry(ShapeTool(ShapeKind.oval), Icons.circle_outlined, 'E'),
     _ToolEntry(ShapeTool(ShapeKind.star), Icons.star_outline, 'S'),

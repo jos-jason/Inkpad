@@ -148,5 +148,53 @@ void main() {
       c.redo();
       expect(c.drawing.activeLayer.elements.single.bounds.left, 20);
     });
+
+    test('anchor tool: click edge adds a point, click point removes it', () {
+      final c = DrawingController();
+      final rect = InkPath.rect(const Rect.fromLTWH(0, 0, 100, 100))..stroke = const StrokeStyle();
+      c.addElement(rect);
+      c.tool = AnchorTool();
+
+      // Middle of the top edge.
+      c.tool.begin(c, const ToolEvent(Offset(50, 1), 1));
+      expect(rect.nodes.length, 5);
+      expect(rect.nodes[1].anchorPoint.dx, closeTo(50, 0.5));
+      expect(rect.nodes[1].hasInPoint || rect.nodes[1].hasOutPoint, isFalse);
+      expect(rect.svgPathData, isNot(contains('C')));
+      expect(c.selection, {rect});
+
+      // Click the new point again: removed.
+      c.tool.begin(c, ToolEvent(rect.nodes[1].anchorPoint, 1));
+      expect(rect.nodes.length, 4);
+
+      c.undo();
+      final restored = c.drawing.activeLayer.elements.single as InkPath;
+      expect(restored.nodes.length, 5);
+    });
+
+    test('anchor tool: never removes below two points', () {
+      final c = DrawingController();
+      final line = InkPath(nodes: [const BezierNode.anchor(Offset(0, 0)), const BezierNode.anchor(Offset(100, 0))]);
+      c.addElement(line);
+      c.select(line);
+      c.tool = AnchorTool();
+      c.tool.begin(c, const ToolEvent(Offset(0, 0), 1));
+      expect(line.nodes.length, 2);
+      expect(c.canUndo, isFalse);
+    });
+
+    test('anchor tool: alt-click toggles corner and smooth', () {
+      final c = DrawingController();
+      final rect = InkPath.rect(const Rect.fromLTWH(0, 0, 100, 100));
+      c.addElement(rect);
+      c.select(rect);
+      c.tool = AnchorTool();
+      c.tool.begin(c, const ToolEvent(Offset(100, 0), 1, alt: true));
+      final n = rect.nodes[1];
+      expect(n.hasInPoint && n.hasOutPoint, isTrue);
+      expect(n.isCorner, isFalse);
+      c.tool.begin(c, const ToolEvent(Offset(100, 0), 1, alt: true));
+      expect(rect.nodes[1].hasInPoint || rect.nodes[1].hasOutPoint, isFalse);
+    });
   });
 }
