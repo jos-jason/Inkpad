@@ -26,6 +26,7 @@ flutter test
 | `lib/controller/drawing_controller.dart` | `WDDrawingController`, `WDPropertyManager` |
 | `lib/tools/` | `Inkpad-Core/Tools/*` |
 | `lib/ui/drawing_canvas.dart` | `WDCanvas` |
+| `lib/library/`, `lib/ui/library_page.dart` | `WDDrawingManager`, `WDBrowserController` |
 
 ## Status
 
@@ -36,7 +37,11 @@ Done:
   polygon, line, hand
 - Pan & zoom: pinch, trackpad, ctrl/cmd + scroll wheel, space-drag, middle mouse
 - Undo/redo, duplicate, group/ungroup, arrange, layers (add, delete, hide, lock)
-- SVG export, native save/open (`.inkpad` JSON), copy SVG to clipboard
+- Library of drawings (like Inkpad's gallery): thumbnails, newest first,
+  new / open / rename / duplicate / delete, import `.inkpad` files.
+  Drawings autosave as you edit. Stored as `.inkpad` files in the app's
+  support folder (browser storage on the web).
+- SVG and `.inkpad` export, copy SVG to clipboard
 - Responsive layout (side panels on desktop/tablet, bottom bar on phones)
 
 To port next (roughly in priority order):
@@ -55,7 +60,7 @@ To port next (roughly in priority order):
 
 V select · P pen · A add/delete point · R rect · E oval · S star · G polygon · L line · H hand ·
 Ctrl/Cmd+Z undo · Shift+Ctrl/Cmd+Z redo · Ctrl/Cmd+D duplicate ·
-Ctrl/Cmd+G group · Shift+Ctrl/Cmd+G ungroup · Ctrl/Cmd+S save · Ctrl/Cmd+O open ·
+Ctrl/Cmd+G group · Shift+Ctrl/Cmd+G ungroup · Ctrl/Cmd+S save now ·
 Ctrl/Cmd+E export SVG · Delete remove · Esc/Enter finish path ·
 +/- zoom · 0 fit · 1 actual size
 

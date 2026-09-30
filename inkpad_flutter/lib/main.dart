@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 
-import 'ui/editor_page.dart';
+import 'library/drawing_store.dart';
+import 'library/library_controller.dart';
+import 'ui/library_page.dart';
 
-void main() => runApp(const InkpadApp());
+void main() => runApp(InkpadApp(library: LibraryController(DrawingStore())));
 
 class InkpadApp extends StatelessWidget {
-  const InkpadApp({super.key});
+  final LibraryController library;
+
+  const InkpadApp({super.key, required this.library});
 
   @override
   Widget build(BuildContext context) {
@@ -14,7 +18,7 @@ class InkpadApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(colorSchemeSeed: const Color(0xFF0A84FF)),
       darkTheme: ThemeData(colorSchemeSeed: const Color(0xFF0A84FF), brightness: Brightness.dark),
-      home: const EditorPage(),
+      home: LibraryPage(library: library),
     );
   }
 }

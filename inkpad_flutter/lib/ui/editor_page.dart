@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../controller/drawing_controller.dart';
+import '../library/drawing_store.dart';
+import '../library/library_controller.dart';
 import '../tools/tool.dart';
 import 'drawing_canvas.dart';
 import 'file_actions.dart';
@@ -15,15 +19,25 @@ class _ToolEntry {
 }
 
 class EditorPage extends StatefulWidget {
-  const EditorPage({super.key});
+  final LibraryController library;
+  final DrawingInfo info;
+
+  const EditorPage({super.key, required this.library, required this.info});
 
   @override
   State<EditorPage> createState() => _EditorPageState();
 }
 
 class _EditorPageState extends State<EditorPage> {
-  final controller = DrawingController();
+  late final controller = DrawingController(drawing: widget.info.drawing);
   final canvasKey = GlobalKey<DrawingCanvasState>();
+
+  // Autosave: edits are written to the library shortly after they happen,
+  // when leaving the editor, and when the app is backgrounded.
+  static const _autosaveDelay = Duration(milliseconds: 800);
+  Timer? _autosave;
+  late String _lastSaved;
+  late final AppLifecycleListener _lifecycle;
 
   late final List<_ToolEntry> tools = [
     _ToolEntry(controller.tool, Icons.near_me_outlined, 'V'),
@@ -40,9 +54,45 @@ class _EditorPageState extends State<EditorPage> {
   DrawingCanvasState? get canvas => canvasKey.currentState;
 
   @override
+  void initState() {
+    super.initState();
+    _lastSaved = controller.drawing.encode();
+    controller.addListener(_scheduleAutosave);
+    _lifecycle = AppLifecycleListener(onHide: _saveNow, onPause: _saveNow);
+  }
+
+  @override
   void dispose() {
+    // Defer the final save: it notifies the library page, which mustn't
+    // rebuild while this page is being torn down.
+    _autosave?.cancel();
+    final drawing = controller.drawing;
+    if (drawing.encode() != _lastSaved) {
+      Future.microtask(() => widget.library.saveEdits(widget.info, drawing));
+    }
+    _lifecycle.dispose();
     controller.dispose();
     super.dispose();
+  }
+
+  void _scheduleAutosave() {
+    _autosave?.cancel();
+    _autosave = Timer(_autosaveDelay, _saveNow);
+  }
+
+  void _saveNow() {
+    _autosave?.cancel();
+    final encoded = controller.drawing.encode();
+    if (encoded == _lastSaved) return;
+    _lastSaved = encoded;
+    widget.library.saveEdits(widget.info, controller.drawing);
+  }
+
+  Future<void> _rename() async {
+    final name = await promptForText(context, title: 'Rename drawing', initial: widget.info.name);
+    if (name == null) return;
+    await widget.library.rename(widget.info, name);
+    setState(() {});
   }
 
   Map<ShortcutActivator, VoidCallback> get _shortcuts {
@@ -78,9 +128,8 @@ class _EditorPageState extends State<EditorPage> {
         k(LogicalKeyboardKey.keyG, shift: true): c.ungroupSelection,
         k(LogicalKeyboardKey.bracketRight, shift: true): c.bringToFront,
         k(LogicalKeyboardKey.bracketLeft, shift: true): c.sendToBack,
-        k(LogicalKeyboardKey.keyS): () => saveDrawing(context, c),
-        k(LogicalKeyboardKey.keyO): () => openDrawing(context, c),
-        k(LogicalKeyboardKey.keyE): () => exportSvg(context, c),
+        k(LogicalKeyboardKey.keyS): _saveNow,
+        k(LogicalKeyboardKey.keyE): () => exportSvg(context, c.drawing, widget.info.name),
       });
     }
     return map;
@@ -125,7 +174,17 @@ class _EditorPageState extends State<EditorPage> {
     final c = controller;
     final hasSel = c.selection.isNotEmpty;
     return AppBar(
-      title: const Text('Inkpad'),
+      title: Tooltip(
+        message: 'Rename',
+        child: InkWell(
+          onTap: _rename,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Text(widget.info.name, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      ),
       actions: [
         IconButton(tooltip: 'Undo', icon: const Icon(Icons.undo), onPressed: c.canUndo ? c.undo : null),
         IconButton(tooltip: 'Redo', icon: const Icon(Icons.redo), onPressed: c.canRedo ? c.redo : null),
@@ -153,11 +212,13 @@ class _EditorPageState extends State<EditorPage> {
           tooltip: 'More',
           onSelected: (action) => action(),
           itemBuilder: (context) => [
-            PopupMenuItem(value: c.newDrawing, child: const Text('New drawing')),
-            PopupMenuItem(value: () => openDrawing(context, c), child: const Text('Open…')),
-            PopupMenuItem(value: () => saveDrawing(context, c), child: const Text('Save…')),
-            PopupMenuItem(value: () => exportSvg(context, c), child: const Text('Export SVG…')),
-            PopupMenuItem(value: () => copySvg(context, c), child: const Text('Copy SVG')),
+            PopupMenuItem(value: _rename, child: const Text('Rename…')),
+            PopupMenuItem(
+                value: () => exportSvg(context, c.drawing, widget.info.name), child: const Text('Export SVG…')),
+            PopupMenuItem(
+                value: () => exportInkpad(context, c.drawing, widget.info.name),
+                child: const Text('Export .inkpad…')),
+            PopupMenuItem(value: () => copySvg(context, c.drawing), child: const Text('Copy SVG')),
             const PopupMenuDivider(),
             PopupMenuItem(value: c.selectAll, child: const Text('Select all')),
             PopupMenuItem(enabled: hasSel, value: c.duplicateSelection, child: const Text('Duplicate')),

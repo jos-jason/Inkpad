@@ -276,20 +276,4 @@ class DrawingController extends ChangeNotifier {
     drawing.activeLayerIndex = i;
     notifyListeners();
   }
-
-  void newDrawing() {
-    checkpoint();
-    drawing = InkDrawing(width: drawing.width, height: drawing.height);
-    selection.clear();
-    activePath = null;
-    notifyListeners();
-  }
-
-  void loadDrawing(InkDrawing d) {
-    checkpoint();
-    drawing = d;
-    selection.clear();
-    activePath = null;
-    notifyListeners();
-  }
 }
