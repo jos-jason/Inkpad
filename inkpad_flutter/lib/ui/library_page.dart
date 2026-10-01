@@ -34,13 +34,11 @@ class _LibraryPageState extends State<LibraryPage> {
   Future<void> _newDrawing() async => _open(await library.create());
 
   Future<void> _import() async {
-    final files = await pickInkpadFiles(context);
-    for (final (name, drawing) in files) {
-      await library.create(drawing: drawing, name: name);
+    final files = await pickDrawingFiles(context);
+    for (final f in files) {
+      await library.create(drawing: f.drawing, name: f.name);
     }
-    if (files.isNotEmpty && mounted) {
-      showSnack(context, files.length == 1 ? 'Imported "${files.first.$1}"' : 'Imported ${files.length} drawings');
-    }
+    if (mounted) reportImport(context, files);
   }
 
   Future<void> _perform(_Action action, DrawingInfo info) async {
@@ -94,7 +92,7 @@ class _LibraryPageState extends State<LibraryPage> {
             title: const Text('Library'),
             actions: [
               IconButton(
-                tooltip: 'Import .inkpad file',
+                tooltip: 'Import SVG or .inkpad files',
                 icon: const Icon(Icons.file_open_outlined),
                 onPressed: _import,
               ),

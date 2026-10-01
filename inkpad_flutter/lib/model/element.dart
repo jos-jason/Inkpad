@@ -35,6 +35,7 @@ abstract class InkElement {
 
   static InkElement fromJson(Map<String, dynamic> j) => switch (j['type']) {
         'path' => InkPath.fromJson(j),
+        'compound' => InkCompoundPath.fromJson(j),
         'group' => InkGroup.fromJson(j),
         _ => throw FormatException('Unknown element type ${j['type']}'),
       };
@@ -42,18 +43,143 @@ abstract class InkElement {
   String opacityAttr() => opacity < 1 ? ' opacity="${fmt(opacity)}"' : '';
 }
 
-/// A single bezier path. Ported from WDPath (compound paths come later).
-class InkPath extends InkElement {
-  List<BezierNode> nodes;
-  bool closed;
+enum FillRule { nonZero, evenOdd }
+
+/// An element with a fill and stroke, drawn from bezier geometry.
+/// Ported from WDStylable / WDAbstractPath.
+abstract class InkStylable extends InkElement {
   InkColor? fill;
   StrokeStyle? stroke;
+  FillRule fillRule;
+
+  InkStylable({this.fill, this.stroke, this.fillRule = FillRule.nonZero, super.opacity});
+
+  Path toFlutterPath();
+
+  /// Every bezier segment, across all subpaths.
+  Iterable<BezierSegment> get allSegments;
+
+  bool get isEmpty;
+
+  /// The SVG `d` attribute.
+  String get svgPathData;
+
+  @override
+  Rect get bounds => isEmpty ? Rect.zero : toFlutterPath().getBounds();
+
+  @override
+  Rect get styleBounds {
+    final s = stroke;
+    return s != null && s.willRender ? bounds.inflate(s.width / 2) : bounds;
+  }
+
+  @override
+  void render(Canvas canvas) {
+    if (isEmpty) return;
+    final path = toFlutterPath();
+    final f = fill;
+    if (f != null) {
+      canvas.drawPath(path, Paint()..color = f.toColor(opacity));
+    }
+    final s = stroke;
+    if (s != null && s.willRender) {
+      canvas.drawPath(
+        s.dashPattern.isEmpty ? path : dashPath(path, s.dashPattern),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..color = s.color.toColor(opacity)
+          ..strokeWidth = s.width
+          ..strokeCap = s.flutterCap
+          ..strokeJoin = s.flutterJoin,
+      );
+    }
+  }
+
+  @override
+  bool hitTest(Offset pt, double tolerance) {
+    if (!styleBounds.inflate(tolerance).contains(pt)) return false;
+    if (fill != null && toFlutterPath().contains(pt)) return true;
+    final strokeSlop = (stroke?.width ?? 0) / 2 + tolerance;
+    for (final s in allSegments) {
+      if (s.closestPoint(pt, samples: 16).$1 <= strokeSlop) return true;
+    }
+    return false;
+  }
+
+  @override
+  bool intersectsRect(Rect r) {
+    if (!bounds.overlaps(r)) return false;
+    for (final s in allSegments) {
+      for (var i = 0; i <= 16; i++) {
+        if (r.contains(s.pointAt(i / 16))) return true;
+      }
+    }
+    return false;
+  }
+
+  @override
+  String toSvg() {
+    final attrs = <String, String>{'d': svgPathData};
+    final f = fill;
+    if (f != null) {
+      attrs['fill'] = f.hexValue;
+      if (f.alpha != 1) attrs['fill-opacity'] = fmt(f.alpha);
+    } else {
+      attrs['fill'] = 'none';
+    }
+    if (fillRule == FillRule.evenOdd) attrs['fill-rule'] = 'evenodd';
+    final s = stroke;
+    if (s != null && s.willRender) attrs.addAll(s.svgAttributes());
+    final a = attrs.entries.map((e) => '${e.key}="${e.value}"').join(' ');
+    return '<path $a${opacityAttr()}/>';
+  }
+
+  Map<String, dynamic> styleJson() => {
+        'fill': fill?.toJson(),
+        'stroke': stroke?.toJson(),
+        if (fillRule == FillRule.evenOdd) 'fillRule': 'evenOdd',
+        'opacity': opacity,
+      };
+
+  void readStyleJson(Map<String, dynamic> j) {
+    fill = j['fill'] == null ? null : InkColor.fromJson(j['fill']);
+    stroke = j['stroke'] == null ? null : StrokeStyle.fromJson(j['stroke']);
+    fillRule = j['fillRule'] == 'evenOdd' ? FillRule.evenOdd : FillRule.nonZero;
+    opacity = (j['opacity'] as num).toDouble();
+  }
+}
+
+/// Splits [source] into dashes following an SVG-style dash [pattern].
+Path dashPath(Path source, List<double> pattern) {
+  final total = pattern.fold<double>(0, (a, b) => a + b);
+  if (total <= 0) return source;
+  final out = Path();
+  for (final metric in source.computeMetrics()) {
+    var distance = 0.0, i = 0;
+    var draw = true;
+    while (distance < metric.length) {
+      final len = pattern[i % pattern.length];
+      if (draw && len > 0) out.addPath(metric.extractPath(distance, distance + len), Offset.zero);
+      distance += len;
+      draw = !draw;
+      i++;
+      if (i > 100000) break; // guards against pathological patterns
+    }
+  }
+  return out;
+}
+
+/// A single bezier path. Ported from WDPath.
+class InkPath extends InkStylable {
+  List<BezierNode> nodes;
+  bool closed;
 
   InkPath({
     List<BezierNode>? nodes,
     this.closed = false,
-    this.fill,
-    this.stroke,
+    super.fill,
+    super.stroke,
+    super.fillRule,
     super.opacity,
   }) : nodes = nodes ?? [];
 
@@ -108,9 +234,15 @@ class InkPath extends InkElement {
     }
   }
 
-  Path toFlutterPath() {
-    final p = Path();
-    if (nodes.isEmpty) return p;
+  @override
+  Iterable<BezierSegment> get allSegments => segments;
+
+  @override
+  bool get isEmpty => nodes.isEmpty;
+
+  /// Adds this path's outline to [p] as a new subpath.
+  void addTo(Path p) {
+    if (nodes.isEmpty) return;
     p.moveTo(nodes.first.anchorPoint.dx, nodes.first.anchorPoint.dy);
     for (final s in segments) {
       if (s.isStraight) {
@@ -120,20 +252,19 @@ class InkPath extends InkElement {
       }
     }
     if (closed) p.close();
+  }
+
+  @override
+  Path toFlutterPath() {
+    final p = Path()..fillType = fillRule == FillRule.evenOdd ? PathFillType.evenOdd : PathFillType.nonZero;
+    addTo(p);
     return p;
   }
 
   @override
   Rect get bounds {
-    if (nodes.isEmpty) return Rect.zero;
     if (nodes.length == 1) return Rect.fromCenter(center: nodes.first.anchorPoint, width: 0, height: 0);
-    return toFlutterPath().getBounds();
-  }
-
-  @override
-  Rect get styleBounds {
-    final s = stroke;
-    return s != null && s.willRender ? bounds.inflate(s.width / 2) : bounds;
+    return super.bounds;
   }
 
   /// Control-point bounds (includes handles).
@@ -147,59 +278,17 @@ class InkPath extends InkElement {
   }
 
   @override
-  void render(Canvas canvas) {
-    if (nodes.isEmpty) return;
-    final path = toFlutterPath();
-    final f = fill;
-    if (f != null) {
-      canvas.drawPath(path, Paint()..color = f.toColor(opacity));
-    }
-    final s = stroke;
-    if (s != null && s.willRender) {
-      canvas.drawPath(
-        path,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..color = s.color.toColor(opacity)
-          ..strokeWidth = s.width
-          ..strokeCap = s.flutterCap
-          ..strokeJoin = s.flutterJoin,
-      );
-    }
-  }
-
-  @override
   void transform(Affine t) {
     // Like Inkpad, stroke width is left unchanged by transforms.
     nodes = nodes.map((n) => n.transform(t)).toList();
   }
 
   @override
-  bool hitTest(Offset pt, double tolerance) {
-    if (!styleBounds.inflate(tolerance).contains(pt)) return false;
-    if (fill != null && toFlutterPath().contains(pt)) return true;
-    final strokeSlop = (stroke?.width ?? 0) / 2 + tolerance;
-    for (final s in segments) {
-      if (s.closestPoint(pt, samples: 16).$1 <= strokeSlop) return true;
-    }
-    return false;
-  }
-
-  @override
-  bool intersectsRect(Rect r) {
-    if (!bounds.overlaps(r)) return false;
-    for (final n in nodes) {
-      if (r.contains(n.anchorPoint)) return true;
-    }
-    for (final s in segments) {
-      for (var i = 0; i <= 16; i++) {
-        if (r.contains(s.pointAt(i / 16))) return true;
-      }
-    }
-    return false;
-  }
+  bool intersectsRect(Rect r) =>
+      nodes.any((n) => r.contains(n.anchorPoint)) || super.intersectsRect(r);
 
   /// Ported from -[WDPath nodeSVGRepresentation].
+  @override
   String get svgPathData {
     if (nodes.isEmpty) return '';
     final sb = StringBuffer();
@@ -216,22 +305,6 @@ class InkPath extends InkElement {
     }
     if (closed) sb.write('Z');
     return sb.toString();
-  }
-
-  @override
-  String toSvg() {
-    final attrs = <String, String>{'d': svgPathData};
-    final f = fill;
-    if (f != null) {
-      attrs['fill'] = f.hexValue;
-      if (f.alpha != 1) attrs['fill-opacity'] = fmt(f.alpha);
-    } else {
-      attrs['fill'] = 'none';
-    }
-    final s = stroke;
-    if (s != null && s.willRender) attrs.addAll(s.svgAttributes());
-    final a = attrs.entries.map((e) => '${e.key}="${e.value}"').join(' ');
-    return '<path $a${opacityAttr()}/>';
   }
 
   /// Inserts an anchor at parameter [t] of segment [segmentIndex], keeping
@@ -309,18 +382,65 @@ class InkPath extends InkElement {
         'type': 'path',
         'nodes': nodes.map((n) => n.toJson()).toList(),
         'closed': closed,
-        'fill': fill?.toJson(),
-        'stroke': stroke?.toJson(),
-        'opacity': opacity,
+        ...styleJson(),
       };
 
   factory InkPath.fromJson(Map<String, dynamic> j) => InkPath(
         nodes: (j['nodes'] as List).map((n) => BezierNode.fromJson(n)).toList(),
         closed: j['closed'] as bool,
-        fill: j['fill'] == null ? null : InkColor.fromJson(j['fill']),
-        stroke: j['stroke'] == null ? null : StrokeStyle.fromJson(j['stroke']),
-        opacity: (j['opacity'] as num).toDouble(),
-      );
+      )..readStyleJson(j);
+}
+
+/// Several subpaths filled and stroked as one shape, so inner subpaths can
+/// cut holes (letters, rings). Ported from WDCompoundPath.
+class InkCompoundPath extends InkStylable {
+  /// Geometry only; the subpaths' own style fields are ignored.
+  List<InkPath> subpaths;
+
+  InkCompoundPath(this.subpaths, {super.fill, super.stroke, super.fillRule, super.opacity});
+
+  @override
+  Iterable<BezierSegment> get allSegments => subpaths.expand((p) => p.segments);
+
+  @override
+  bool get isEmpty => subpaths.every((p) => p.isEmpty);
+
+  @override
+  Path toFlutterPath() {
+    final p = Path()..fillType = fillRule == FillRule.evenOdd ? PathFillType.evenOdd : PathFillType.nonZero;
+    for (final sub in subpaths) {
+      sub.addTo(p);
+    }
+    return p;
+  }
+
+  @override
+  void transform(Affine t) {
+    for (final p in subpaths) {
+      p.transform(t);
+    }
+  }
+
+  @override
+  String get svgPathData => subpaths.map((p) => p.svgPathData).join();
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'compound',
+        'subpaths': [
+          for (final p in subpaths) {'nodes': p.nodes.map((n) => n.toJson()).toList(), 'closed': p.closed},
+        ],
+        ...styleJson(),
+      };
+
+  factory InkCompoundPath.fromJson(Map<String, dynamic> j) => InkCompoundPath([
+        for (final p in j['subpaths'] as List)
+          InkPath(
+            nodes: (p['nodes'] as List).map((n) => BezierNode.fromJson(n)).toList(),
+            closed: p['closed'] as bool,
+          ),
+      ])
+        ..readStyleJson(j);
 }
 
 /// A group of elements. Ported from WDGroup.

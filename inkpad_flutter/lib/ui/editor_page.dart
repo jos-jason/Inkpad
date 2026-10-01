@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../controller/drawing_controller.dart';
 import '../library/drawing_store.dart';
 import '../library/library_controller.dart';
+import '../model/drawing.dart';
 import '../tools/tool.dart';
 import 'drawing_canvas.dart';
 import 'file_actions.dart';
@@ -29,7 +30,9 @@ class EditorPage extends StatefulWidget {
 }
 
 class _EditorPageState extends State<EditorPage> {
-  late final controller = DrawingController(drawing: widget.info.drawing);
+  // The editor works on its own copy; the library only ever receives
+  // snapshots, so its thumbnails always match what was saved.
+  late final controller = DrawingController(drawing: InkDrawing.decode(widget.info.drawing.encode()));
   final canvasKey = GlobalKey<DrawingCanvasState>();
 
   // Autosave: edits are written to the library shortly after they happen,
@@ -66,9 +69,9 @@ class _EditorPageState extends State<EditorPage> {
     // Defer the final save: it notifies the library page, which mustn't
     // rebuild while this page is being torn down.
     _autosave?.cancel();
-    final drawing = controller.drawing;
-    if (drawing.encode() != _lastSaved) {
-      Future.microtask(() => widget.library.saveEdits(widget.info, drawing));
+    final encoded = controller.drawing.encode();
+    if (encoded != _lastSaved) {
+      Future.microtask(() => widget.library.saveEdits(widget.info, InkDrawing.decode(encoded)));
     }
     _lifecycle.dispose();
     controller.dispose();
@@ -85,7 +88,15 @@ class _EditorPageState extends State<EditorPage> {
     final encoded = controller.drawing.encode();
     if (encoded == _lastSaved) return;
     _lastSaved = encoded;
-    widget.library.saveEdits(widget.info, controller.drawing);
+    widget.library.saveEdits(widget.info, InkDrawing.decode(encoded));
+  }
+
+  Future<void> _placeSvg() async {
+    final files = await pickDrawingFiles(context, inkpad: false);
+    for (final f in files) {
+      controller.place(f.drawing);
+    }
+    if (mounted) reportImport(context, files);
   }
 
   Future<void> _rename() async {
@@ -213,6 +224,7 @@ class _EditorPageState extends State<EditorPage> {
           onSelected: (action) => action(),
           itemBuilder: (context) => [
             PopupMenuItem(value: _rename, child: const Text('Rename…')),
+            PopupMenuItem(value: _placeSvg, child: const Text('Place SVG…')),
             PopupMenuItem(
                 value: () => exportSvg(context, c.drawing, widget.info.name), child: const Text('Export SVG…')),
             PopupMenuItem(

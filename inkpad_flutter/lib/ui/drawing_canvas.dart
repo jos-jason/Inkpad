@@ -271,7 +271,7 @@ class _CanvasPainter extends CustomPainter {
       ..color = selectionColor;
 
     void outlineElement(InkElement e) {
-      if (e is InkPath) {
+      if (e is InkStylable) {
         canvas.drawPath(e.toFlutterPath(), outline);
       } else if (e is InkGroup) {
         e.elements.forEach(outlineElement);

@@ -26,33 +26,42 @@ flutter test
 | `lib/controller/drawing_controller.dart` | `WDDrawingController`, `WDPropertyManager` |
 | `lib/tools/` | `Inkpad-Core/Tools/*` |
 | `lib/ui/drawing_canvas.dart` | `WDCanvas` |
+| `lib/svg/` | `Inkpad-Core/SVG/*` |
 | `lib/library/`, `lib/ui/library_page.dart` | `WDDrawingManager`, `WDBrowserController` |
 
 ## Status
 
 Done:
-- Document model: layers, paths, groups, fill, stroke, opacity
+- Document model: layers, paths, compound paths (shapes with holes), groups,
+  fill, stroke (incl. dashes), opacity
 - Tools: select / move / node & handle editing, pen, add/delete point
   (Alt-click converts corner/smooth), rectangle, oval, star,
   polygon, line, hand
 - Pan & zoom: pinch, trackpad, ctrl/cmd + scroll wheel, space-drag, middle mouse
 - Undo/redo, duplicate, group/ungroup, arrange, layers (add, delete, hide, lock)
 - Library of drawings (like Inkpad's gallery): thumbnails, newest first,
-  new / open / rename / duplicate / delete, import `.inkpad` files.
+  new / open / rename / duplicate / delete, import `.svg` and `.inkpad` files.
   Drawings autosave as you edit. Stored as `.inkpad` files in the app's
   support folder (browser storage on the web).
 - SVG and `.inkpad` export, copy SVG to clipboard
+- SVG import (`lib/svg/`): paths (all commands incl. arcs), basic shapes,
+  groups, `use`/`symbol`, transforms, inherited styles, CSS `<style>` rules
+  (tag, class, id, descendant and child selectors), fill rules, units.
+  Top-level groups become layers, as in Inkpad (Inkscape layers too).
+  Gradients import as their average color; clipping and masks are ignored;
+  text and images are skipped. Anything approximated is reported after import.
+  Tested against ~3,000 real-world SVGs. "Place SVG…" in the editor adds an
+  SVG to the open drawing.
 - Responsive layout (side panels on desktop/tablet, bottom bar on phones)
 
 To port next (roughly in priority order):
-- SVG import (`Inkpad-Core/SVG`)
 - Scale / rotate tools and a transform bounding box
-- Compound paths, masks
+- Clipping masks (imported SVGs currently ignore clip-path), releasing compound paths
 - Gradients and fill transforms (`WDGradient`, `WDFillTransform`)
 - Boolean path operations (`WDPathfinder` / livarot). Note: livarot comes from
   Inkscape; check its license before porting it rather than reimplementing.
 - Freehand tool with curve fitting (`CurveFit`), scissors, eraser
-- Text and text-on-path, images, shadows, arrowheads, dash patterns UI
+- Text and text-on-path (and SVG text import), images, shadows, arrowheads, dash patterns UI
 - Snapping (grid, points, edges), rulers, PDF/PNG export
 - Full color picker
 

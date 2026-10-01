@@ -84,10 +84,10 @@ void main() {
     final canvas = tester.getCenter(find.byType(DrawingCanvas));
     await tester.dragFrom(canvas, const Offset(80, 60));
     await tester.pumpAndSettle();
-    expect(lib.drawings.single.drawing.allElements.length, 1);
 
     // Autosave kicks in shortly after editing, without leaving the editor.
     await tester.pump(const Duration(seconds: 1));
+    expect(lib.drawings.single.drawing.allElements.length, 1);
     expect(DrawingInfo.decode('x', store.files.values.single).drawing.allElements.length, 1);
 
     // Back to the library; the edit is saved.

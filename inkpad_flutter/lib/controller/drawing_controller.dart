@@ -231,7 +231,7 @@ class DrawingController extends ChangeNotifier {
     if (selection.isEmpty) return;
     checkpoint();
     void apply(InkElement e) {
-      if (e is InkPath) {
+      if (e is InkStylable) {
         if (fill) e.fill = fillColor;
         if (stroke) e.stroke = strokeStyle;
       } else if (e is InkGroup) {
@@ -239,6 +239,20 @@ class DrawingController extends ChangeNotifier {
       }
     }
     selection.forEach(apply);
+    notifyListeners();
+  }
+
+  /// Adds another drawing's contents to the active layer as one selected
+  /// group (or a single element), keeping its coordinates.
+  void place(InkDrawing other) {
+    final elements = [for (final e in other.allElements) e.clone()];
+    if (elements.isEmpty) return;
+    checkpoint();
+    final placed = elements.length == 1 ? elements.single : InkGroup(elements);
+    drawing.activeLayer.elements.add(placed);
+    selection
+      ..clear()
+      ..add(placed);
     notifyListeners();
   }
 
