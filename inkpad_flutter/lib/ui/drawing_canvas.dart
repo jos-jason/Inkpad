@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../controller/drawing_controller.dart';
 import '../model/element.dart';
+import '../model/style.dart';
 import '../tools/tool.dart';
 
 /// Screen-space view of the drawing: screen = doc * scale + offset.
@@ -290,6 +291,24 @@ class _CanvasPainter extends CustomPainter {
 
     final path = controller.activePath ?? controller.singleSelectedPath;
     if (path != null) _paintNodes(canvas, path, px);
+
+    final shape = controller.singleSelectedStylable;
+    final fill = shape?.fill;
+    if (shape != null && fill is InkGradient) _paintGradientHandles(canvas, fill, shape.bounds, px);
+  }
+
+  /// The gradient's start and end, draggable with the select tool.
+  /// Ported in spirit from -[WDElement drawGradientControlsWithViewTransform:].
+  void _paintGradientHandles(Canvas canvas, InkGradient g, Rect bounds, double px) {
+    final geom = g.fitted(bounds);
+    final a = geom.documentStart, b = geom.documentEnd;
+    canvas.drawLine(a, b, Paint()..color = Colors.white..strokeWidth = 3 * px);
+    canvas.drawLine(a, b, Paint()..color = selectionColor..strokeWidth = px);
+    for (final (pt, color, radius) in [(a, g.stops.first.color, 6.0), (b, g.stops.last.color, 5.0)]) {
+      canvas.drawCircle(pt, radius * px, Paint()..color = Colors.white);
+      canvas.drawCircle(pt, (radius - 1.5) * px, Paint()..color = color.toColor());
+      canvas.drawCircle(pt, radius * px, Paint()..style = PaintingStyle.stroke..strokeWidth = px..color = selectionColor);
+    }
   }
 
   void _paintNodes(Canvas canvas, InkPath path, double px) {

@@ -97,6 +97,56 @@ void main() {
     });
   });
 
+  group('Gradients and masks', () {
+    test('a fitted gradient follows the shape until it is transformed', () {
+      final p = InkPath.rect(const Rect.fromLTWH(0, 0, 100, 50))
+        ..fill = InkGradient.between(InkColor.black, InkColor.white);
+      final g = p.fill as InkGradient;
+      expect(g.fitted(p.bounds).documentStart, const Offset(0, 25));
+      expect(g.fitted(p.bounds).documentEnd, const Offset(100, 25));
+      expect(g.shader(p.bounds, 1), isNotNull);
+
+      p.transform(Affine.rotationAbout(const Offset(50, 25), 3.141592653589793 / 2));
+      final turned = (p.fill as InkGradient).geometry!;
+      expect(turned.documentStart.dx, closeTo(50, 1e-9));
+      expect(turned.documentStart.dy, closeTo(-25, 1e-9));
+    });
+
+    test('gradient helpers', () {
+      final g = InkGradient.between(InkColor.black, InkColor.white);
+      expect(g.colorAt(0.25).red, closeTo(0.25, 1e-9));
+      expect(g.reversed().stops.first.color, InkColor.white);
+      expect(g.withStopColor(1, const InkColor(1, 0, 0)).stops[1].color, const InkColor(1, 0, 0));
+      final geom = const GradientGeometry(Offset(0, 0), Offset(10, 0), transform: Affine(2, 0, 0, 2, 5, 5));
+      expect(geom.withDocumentEnd(const Offset(45, 5)).end, const Offset(20, 0));
+      expect(geom.withDocumentStart(const Offset(7, 7)).start, const Offset(1, 1));
+    });
+
+    test('gradients and masks survive JSON and clone', () {
+      final mask = InkPath.oval(const Rect.fromLTWH(0, 0, 10, 10))
+        ..fill = const InkGradient(
+          type: GradientType.radial,
+          stops: [GradientStop(0, InkColor.white), GradientStop(1, InkColor.black)],
+          geometry: GradientGeometry(Offset(5, 5), Offset(10, 5), focal: Offset(4, 5)),
+        )
+        ..maskedElements = [InkPath.rect(const Rect.fromLTWH(-5, -5, 20, 20))..fill = InkColor.black];
+      final copy = mask.clone() as InkPath;
+      expect(copy.fill, mask.fill);
+      expect(copy.maskedElements.single.bounds, const Rect.fromLTWH(-5, -5, 20, 20));
+      final d = InkDrawing()..activeLayer.elements.add(mask);
+      expect(InkDrawing.decode(d.encode()).encode(), d.encode());
+    });
+
+    test('masks clip hit testing and move their contents', () {
+      final inner = InkPath.rect(const Rect.fromLTWH(0, 0, 100, 100))..fill = InkColor.black;
+      final mask = InkPath.rect(const Rect.fromLTWH(25, 25, 50, 50))..maskedElements = [inner];
+      expect(mask.hitTest(const Offset(50, 50), 0), isTrue);
+      expect(mask.hitTest(const Offset(10, 10), 0), isFalse);
+      mask.transform(Affine.translation(10, 0));
+      expect(inner.bounds.left, 10);
+    });
+  });
+
   group('Tools', () {
     test('pen: two clicks then close by clicking the first node', () {
       final c = DrawingController()..tool = PenTool();
@@ -195,6 +245,79 @@ void main() {
       expect(n.isCorner, isFalse);
       c.tool.begin(c, const ToolEvent(Offset(100, 0), 1, alt: true));
       expect(rect.nodes[1].hasInPoint || rect.nodes[1].hasOutPoint, isFalse);
+    });
+
+    test('make and release a clipping mask, with undo', () {
+      final c = DrawingController();
+      final back = InkPath.rect(const Rect.fromLTWH(0, 0, 100, 100))..fill = InkColor.black;
+      final middle = InkPath.oval(const Rect.fromLTWH(10, 10, 50, 50))..fill = InkColor.white;
+      final top = InkPath.star(const Rect.fromLTWH(20, 20, 60, 60), 5);
+      c.drawing.activeLayer.elements.addAll([back, middle, top]);
+      c.selection.addAll([top, back, middle]);
+      expect(c.canMakeMask, isTrue);
+
+      c.makeMask();
+      expect(c.drawing.activeLayer.elements, [top]);
+      expect(top.maskedElements, [back, middle]); // stacking order kept
+      expect(c.selection, {top});
+      expect(c.canReleaseMask, isTrue);
+
+      c.releaseMask();
+      expect(c.drawing.activeLayer.elements, [top, back, middle]);
+      expect(top.isMasking, isFalse);
+
+      c.undo();
+      final restored = c.drawing.activeLayer.elements.single as InkStylable;
+      expect(restored.maskedElements.length, 2);
+    });
+
+    test('cannot mask with a group on top or a single element', () {
+      final c = DrawingController();
+      final a = InkPath.rect(const Rect.fromLTWH(0, 0, 10, 10));
+      final g = InkGroup([InkPath.rect(const Rect.fromLTWH(0, 0, 5, 5))]);
+      c.drawing.activeLayer.elements.addAll([a, g]);
+      c.selection.add(a);
+      expect(c.canMakeMask, isFalse);
+      c.selection.add(g);
+      expect(c.canMakeMask, isFalse);
+    });
+
+    test('dragging a gradient handle with the select tool', () {
+      final c = DrawingController();
+      final p = InkPath.rect(const Rect.fromLTWH(0, 0, 100, 50))
+        ..fill = InkGradient.between(InkColor.black, InkColor.white);
+      c.addElement(p);
+      c.select(p);
+      c.tool = SelectionTool();
+      // The end handle sits at the middle of the right edge.
+      c.tool.begin(c, const ToolEvent(Offset(100, 25), 1));
+      c.tool.move(c, const ToolEvent(Offset(50, 0), 1));
+      c.tool.end(c, const ToolEvent(Offset(50, 0), 1));
+      final g = (p.fill as InkGradient).geometry!;
+      expect(g.documentStart, const Offset(0, 25));
+      expect(g.documentEnd, const Offset(50, 0));
+      expect(p.bounds.left, 0); // the shape itself didn't move
+      c.undo();
+      expect(((c.drawing.activeLayer.elements.single as InkPath).fill as InkGradient).geometry, isNull);
+    });
+
+    test('selecting adopts style; recoloring keeps a gradient where it is', () {
+      final c = DrawingController();
+      const placed = GradientGeometry(Offset(5, 5), Offset(6, 6));
+      final p = InkPath.rect(const Rect.fromLTWH(0, 0, 10, 10))
+        ..fill = InkGradient.between(InkColor.black, InkColor.white).copyWith(geometry: placed)
+        ..stroke = null;
+      c.addElement(p);
+      c.select(p);
+      expect(c.strokeStyle, isNull);
+      final adopted = c.fillPaint as InkGradient;
+      expect(adopted.geometry, isNull); // defaults never carry a position
+
+      c.fillPaint = adopted.withStopColor(0, const InkColor(1, 0, 0));
+      c.applyStyleToSelection(fill: true);
+      final g = p.fill as InkGradient;
+      expect(g.stops.first.color, const InkColor(1, 0, 0));
+      expect(g.geometry, placed);
     });
   });
 }

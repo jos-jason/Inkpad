@@ -37,18 +37,20 @@ class SvgImportException implements Exception {
 /// #id), inheritance, opacity, dashes, fill rules (shapes with holes).
 /// Top-level groups become layers, as in Inkpad.
 ///
-/// Approximated: gradients (become their average color), clipping and
-/// masks (ignored). Skipped: text, images.
+/// Gradient fills (linear and radial) and clip paths are imported as such;
+/// masks made of solid white shapes become clipping masks.
+/// Approximated: gradient outlines (become a solid color), soft masks
+/// (ignored), patterns (left out). Skipped: text, images.
 SvgImportResult importSvg(String source) => _SvgImporter(source).run();
 
 /// Properties that children inherit from their parents.
 const _inherited = {
-  'fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-width', 'stroke-opacity',
+  'fill', 'fill-opacity', 'fill-rule', 'clip-rule', 'stroke', 'stroke-width', 'stroke-opacity',
   'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'color', 'visibility',
 };
 
 /// Properties that can be set by attribute, CSS or style="".
-const _styleProperties = {..._inherited, 'opacity', 'display'};
+const _styleProperties = {..._inherited, 'opacity', 'display', 'clip-path', 'mask', 'stop-color', 'stop-opacity'};
 
 /// Elements that never render directly.
 const _nonRendering = {
@@ -362,11 +364,6 @@ class _SvgImporter {
     final ctm = parseTransform(e.getAttribute('transform')).then(parent.ctm);
     final context = _Context(ctm, inherited, parent.useDepth);
 
-    if (e.getAttribute('clip-path') != null || own['clip-path'] != null) {
-      _notes.add('Clipping paths were ignored, so some shapes may show more than in the original');
-    }
-    if (e.getAttribute('mask') != null) _notes.add('Masks were ignored');
-
     InkElement? result;
     switch (name) {
       case 'g' || 'a' || 'switch':
@@ -406,8 +403,145 @@ class _SvgImporter {
         _skip('embedded HTML element');
     }
 
+    final clipId = _funcIri(own['clip-path']);
+    if (result != null && clipId != null) result = _applyClip(result, clipId, ctm);
+    final maskId = _funcIri(own['mask']);
+    if (result != null && maskId != null) result = _applyMask(result, maskId, ctm);
+
     if (result != null) result.opacity *= _opacity(own);
     return result;
+  }
+
+  static final _funcIriRe = RegExp(r'''^url\(\s*["']?#([^)"']+)["']?\s*\)''');
+
+  String? _funcIri(String? value) => value == null ? null : _funcIriRe.firstMatch(value.trim())?.group(1);
+
+  // ---- Clipping and masks ------------------------------------------------
+
+  /// The bounds of [e] in the user space of [ctm] (before [ctm] is applied).
+  Rect _userBounds(InkElement e, Affine ctm) {
+    final b = e.bounds, inv = ctm.inverted();
+    final pts = [b.topLeft, b.topRight, b.bottomLeft, b.bottomRight].map(inv.apply).toList();
+    return pts.skip(1).fold(Rect.fromPoints(pts[0], pts[0]), (r, p) => r.expandToInclude(Rect.fromPoints(p, p)));
+  }
+
+  /// Maps the unit square onto [r] (for objectBoundingBox units).
+  Affine _boxTransform(Rect r) => Affine(r.width, 0, 0, r.height, r.left, r.top);
+
+  /// Wraps [result] in a clipping mask made from the `<clipPath>` [id].
+  /// Ported in spirit from -[WDSVGParser clip:].
+  InkElement? _applyClip(InkElement result, String id, Affine ctm) {
+    final clip = _ids[id];
+    if (clip == null || clip.name.local != 'clipPath') {
+      _notes.add('Some clipping paths were missing and were ignored');
+      return result;
+    }
+    var base = parseTransform(clip.getAttribute('transform'));
+    if (clip.getAttribute('clipPathUnits') == 'objectBoundingBox') {
+      base = base.then(_boxTransform(_userBounds(result, ctm)));
+    }
+    base = base.then(ctm);
+
+    final (clipStyle, _) = _computeStyle(clip, const {});
+    final shapes = <InkElement>[];
+    _addChildren(clip, _Context(base, clipStyle), shapes);
+    // An empty clip path hides the element completely.
+    final mask = _maskShape(shapes, evenOdd: _clipRuleIsEvenOdd(clip));
+    return mask == null ? null : _wrap(mask, result);
+  }
+
+  bool _clipRuleIsEvenOdd(XmlElement clip) {
+    final shapes = clip.childElements.where((c) => !_nonRendering.contains(c.name.local)).toList();
+    if (shapes.length != 1) return false;
+    final (style, _) = _computeStyle(shapes.single, _computeStyle(clip, const {}).$1);
+    return style['clip-rule'] == 'evenodd';
+  }
+
+  /// A `<mask>` made only of solid white shapes is just a clip. Softer masks
+  /// (gradients, transparency) are approximated: clipped to the mask's shapes
+  /// with their average brightness as an even transparency, which keeps
+  /// effects like gloss highlights translucent.
+  InkElement? _applyMask(InkElement result, String id, Affine ctm) {
+    final mask = _ids[id];
+    if (mask == null || mask.name.local != 'mask') return result;
+    var base = Affine.identity;
+    if (mask.getAttribute('maskContentUnits') == 'objectBoundingBox') {
+      base = _boxTransform(_userBounds(result, ctm));
+    }
+    base = base.then(ctm);
+    final (maskStyle, _) = _computeStyle(mask, const {});
+    final shapes = <InkElement>[];
+    _addChildren(mask, _Context(base, maskStyle), shapes);
+    final shape = _maskShape(shapes);
+    if (shape == null) return null;
+    final wrapped = _wrap(shape, result);
+    if (!shapes.every(_isSolidWhite)) {
+      _notes.add('Soft masks (fades) were approximated with even transparency');
+      wrapped.opacity *= _maskStrength(shapes);
+    }
+    return wrapped;
+  }
+
+  /// Average luminance × alpha of a mask's contents (1 = fully shows).
+  double _maskStrength(List<InkElement> shapes) {
+    final values = <double>[];
+    void collect(InkElement e, double opacity) {
+      if (e is InkGroup) {
+        for (final c in e.elements) {
+          collect(c, opacity * e.opacity);
+        }
+      } else if (e is InkStylable) {
+        final f = e.fill;
+        final colors = switch (f) {
+          InkGradient() => [for (final s in f.stops) s.color],
+          InkColor() => [f],
+          _ => <InkColor>[],
+        };
+        for (final c in colors) {
+          values.add((0.2126 * c.red + 0.7152 * c.green + 0.0722 * c.blue) * c.alpha * opacity * e.opacity);
+        }
+      }
+    }
+
+    for (final e in shapes) {
+      collect(e, 1);
+    }
+    return values.isEmpty ? 0 : (values.reduce((a, b) => a + b) / values.length).clamp(0.0, 1.0);
+  }
+
+  bool _isSolidWhite(InkElement e) {
+    if (e is InkGroup) return e.opacity >= 0.99 && e.elements.every(_isSolidWhite);
+    if (e is! InkStylable || e.isMasking || e.opacity < 0.99) return false;
+    final f = e.fill;
+    final strokeOk = e.stroke == null || !e.stroke!.willRender;
+    return strokeOk && f is InkColor && f.alpha >= 0.99 && f.red > 0.99 && f.green > 0.99 && f.blue > 0.99;
+  }
+
+  /// One unstyled outline made from all of [shapes]' geometry.
+  InkStylable? _maskShape(List<InkElement> shapes, {bool evenOdd = false}) {
+    final subpaths = <InkPath>[];
+    void collect(InkElement e) {
+      switch (e) {
+        case InkGroup():
+          e.elements.forEach(collect);
+        case InkCompoundPath():
+          subpaths.addAll(e.subpaths);
+        case InkPath():
+          subpaths.add(InkPath(nodes: e.nodes, closed: e.closed));
+      }
+    }
+
+    shapes.forEach(collect);
+    if (subpaths.isEmpty) return null;
+    final rule = evenOdd ? FillRule.evenOdd : FillRule.nonZero;
+    if (subpaths.length == 1) return subpaths.single..fillRule = rule;
+    return InkCompoundPath(subpaths, fillRule: rule);
+  }
+
+  /// Makes [mask] clip [content] (a group's children are clipped directly).
+  InkStylable _wrap(InkStylable mask, InkElement content) {
+    mask.maskedElements = content is InkGroup && content.opacity == 1 ? content.elements : [content];
+    return mask;
   }
 
   InkElement? _group(XmlElement e, _Context context) {
@@ -470,6 +604,8 @@ class _SvgImporter {
   InkElement? _shape(List<InkPath> subpaths, _Context context, {bool canFill = true}) {
     subpaths = subpaths.where((p) => p.nodes.length > 1).toList();
     if (subpaths.isEmpty) return null;
+    // Bounds before transforming, for gradients in objectBoundingBox units.
+    final localBounds = subpaths.map((p) => p.bounds).reduce((a, b) => a.expandToInclude(b));
     for (final p in subpaths) {
       p.transform(context.ctm);
     }
@@ -477,11 +613,17 @@ class _SvgImporter {
     final scale = context.ctm.scaleFactor;
 
     final fill = canFill
-        ? _resolvePaint(style['fill'] ?? 'black', style['fill-opacity'], style['color'])
+        ? _resolvePaint(style['fill'] ?? 'black', style['fill-opacity'], style['color'],
+            box: localBounds, ctm: context.ctm)
         : null;
 
     StrokeStyle? stroke;
-    final strokeColor = _resolvePaint(style['stroke'] ?? 'none', style['stroke-opacity'], style['color']);
+    final strokePaint = _resolvePaint(style['stroke'] ?? 'none', style['stroke-opacity'], style['color'],
+        box: localBounds, ctm: context.ctm);
+    if (strokePaint is InkGradient) {
+      _notes.add('Gradient outlines were replaced by a solid color (outlines are solid-color only for now)');
+    }
+    final strokeColor = strokePaint?.representativeColor;
     if (strokeColor != null) {
       final width = (parseLength(style['stroke-width'], percentOf: _viewDiagonal) ?? 1) * scale;
       var dashes = style['stroke-dasharray'] == 'none' ? <double>[] : parseNumberList(style['stroke-dasharray']);
@@ -506,10 +648,12 @@ class _SvgImporter {
     return InkCompoundPath(subpaths, fill: fill, stroke: stroke, fillRule: rule);
   }
 
-  InkColor? _resolvePaint(String value, String? opacity, String? currentColor) {
+  /// Resolves a fill or stroke value. Gradients need the shape's local
+  /// [box] and [ctm]; without them they are approximated by their colors.
+  InkPaint? _resolvePaint(String value, String? opacity, String? currentColor, {Rect? box, Affine? ctm}) {
     final paint = parsePaint(value);
     final alpha = (double.tryParse(opacity ?? '') ?? 1).clamp(0.0, 1.0);
-    InkColor? color;
+    InkColor color;
     switch (paint) {
       case null || SvgNoPaint():
         return null;
@@ -521,41 +665,106 @@ class _SvgImporter {
         final target = _ids[id];
         final kind = target?.name.local;
         if (kind == 'linearGradient' || kind == 'radialGradient') {
-          _notes.add('Gradients were replaced by their average color (gradients aren\'t supported yet)');
-          color = _averageGradientColor(target!);
-        } else {
-          // Patterns usually hold images we can't show; leaving them out
-          // looks closer to the original than a solid block.
-          if (kind == 'pattern') _notes.add('Pattern fills were left out (patterns aren\'t supported yet)');
-          if (fallback is! SvgColorPaint) return null;
-          color = fallback.color;
+          return _gradient(target!, box ?? Rect.zero, ctm ?? Affine.identity, alpha);
         }
+        // Patterns usually hold images we can't show; leaving them out
+        // looks closer to the original than a solid block.
+        if (kind == 'pattern') _notes.add('Pattern fills were left out (patterns aren\'t supported yet)');
+        if (fallback is! SvgColorPaint) return null;
+        color = fallback.color;
     }
-    if (color == null) return null;
     return color.withAlpha(color.alpha * alpha);
   }
 
-  InkColor? _averageGradientColor(XmlElement gradient, [int depth = 0]) {
-    var stops = gradient.childElements.where((c) => c.name.local == 'stop').toList();
-    // Stops may be inherited from another gradient via href.
-    final href = _attrLocal(gradient, 'href');
-    if (stops.isEmpty && href != null && href.startsWith('#') && depth < 8) {
-      final parent = _ids[href.substring(1)];
-      if (parent != null) return _averageGradientColor(parent, depth + 1);
+  /// The gradient and the gradients it inherits from (via href), nearest first.
+  List<XmlElement> _gradientChain(XmlElement g) {
+    final chain = [g];
+    while (chain.length < 8) {
+      final href = _attrLocal(chain.last, 'href');
+      final next = href != null && href.startsWith('#') ? _ids[href.substring(1)] : null;
+      if (next == null || chain.contains(next) || !next.name.local.endsWith('Gradient')) break;
+      chain.add(next);
+    }
+    return chain;
+  }
+
+  /// Builds a gradient from a `<linearGradient>`/`<radialGradient>`.
+  /// Ported in spirit from WDSVGParser's gradient handling, plus focal
+  /// points, spread methods and gradient transforms.
+  InkPaint? _gradient(XmlElement g, Rect box, Affine ctm, double alpha) {
+    final chain = _gradientChain(g);
+    String? attr(String name) {
+      for (final e in chain) {
+        final v = e.getAttribute(name);
+        if (v != null) return v;
+      }
+      return null;
+    }
+
+    // Stops come from the nearest gradient that has any.
+    final stopElements = chain
+        .map((e) => e.childElements.where((c) => c.name.local == 'stop').toList())
+        .firstWhere((s) => s.isNotEmpty, orElse: () => []);
+    final stops = <GradientStop>[];
+    var last = 0.0;
+    for (final stop in stopElements) {
+      final (_, own) = _computeStyle(stop, const {});
+      final raw = stop.getAttribute('offset')?.trim() ?? '0';
+      var offset = raw.endsWith('%')
+          ? (double.tryParse(raw.substring(0, raw.length - 1)) ?? 0) / 100
+          : double.tryParse(raw) ?? 0;
+      offset = offset.clamp(last, 1.0); // offsets never go backwards
+      last = offset;
+      final c = parseColor(own['stop-color'] ?? 'black') ?? InkColor.black;
+      final o = (double.tryParse(own['stop-opacity'] ?? '') ?? 1).clamp(0.0, 1.0);
+      stops.add(GradientStop(offset, c.withAlpha(c.alpha * o * alpha)));
     }
     if (stops.isEmpty) return null;
-    var r = 0.0, g = 0.0, b = 0.0, a = 0.0;
-    for (final stop in stops) {
-      final (_, own) = _computeStyle(stop, const {});
-      final decl = {...own, ...parseDeclarations(stop.getAttribute('style'))};
-      final c = parseColor(stop.getAttribute('stop-color') ?? decl['stop-color'] ?? 'black') ?? InkColor.black;
-      final o = double.tryParse(stop.getAttribute('stop-opacity') ?? decl['stop-opacity'] ?? '') ?? 1;
-      r += c.red;
-      g += c.green;
-      b += c.blue;
-      a += c.alpha * o;
+    if (stops.length == 1) return stops.single.color;
+
+    final boxUnits = attr('gradientUnits') != 'userSpaceOnUse';
+    if (boxUnits && (box.width <= 0 || box.height <= 0)) {
+      // A gradient relative to a flat shape is undefined; use its middle color.
+      return InkGradient(stops: stops).representativeColor;
     }
-    final n = stops.length;
-    return InkColor(r / n, g / n, b / n, a / n);
+    double coord(String name, String fallback, {required double percentOf}) {
+      final v = (attr(name) ?? fallback).trim();
+      if (boxUnits) {
+        return v.endsWith('%') ? (double.tryParse(v.substring(0, v.length - 1)) ?? 0) / 100 : double.tryParse(v) ?? 0;
+      }
+      return parseLength(v, percentOf: percentOf) ?? 0;
+    }
+
+    var transform = parseTransform(attr('gradientTransform'));
+    if (boxUnits) transform = transform.then(_boxTransform(box));
+    transform = transform.then(ctm);
+
+    final spread = switch (attr('spreadMethod')) {
+      'reflect' => SpreadMethod.reflect,
+      'repeat' => SpreadMethod.repeat,
+      _ => SpreadMethod.pad,
+    };
+
+    final GradientGeometry geometry;
+    final GradientType type;
+    if (g.name.local == 'linearGradient') {
+      type = GradientType.linear;
+      geometry = GradientGeometry(
+        Offset(coord('x1', '0%', percentOf: _viewWidth), coord('y1', '0%', percentOf: _viewHeight)),
+        Offset(coord('x2', '100%', percentOf: _viewWidth), coord('y2', '0%', percentOf: _viewHeight)),
+        transform: transform,
+      );
+    } else {
+      type = GradientType.radial;
+      final c = Offset(coord('cx', '50%', percentOf: _viewWidth), coord('cy', '50%', percentOf: _viewHeight));
+      final r = coord('r', '50%', percentOf: _viewDiagonal);
+      final f = Offset(
+        attr('fx') == null ? c.dx : coord('fx', '50%', percentOf: _viewWidth),
+        attr('fy') == null ? c.dy : coord('fy', '50%', percentOf: _viewHeight),
+      );
+      if (r <= 0) return stops.last.color; // SVG: zero radius paints the last stop
+      geometry = GradientGeometry(c, c + Offset(r, 0), focal: f == c ? null : f, transform: transform);
+    }
+    return InkGradient(type: type, stops: stops, spread: spread, geometry: geometry);
   }
 }

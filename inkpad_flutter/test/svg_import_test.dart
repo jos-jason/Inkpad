@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inkpad/model/drawing.dart';
 import 'package:inkpad/model/element.dart';
+import 'package:inkpad/model/geometry.dart';
 import 'package:inkpad/model/style.dart';
 import 'package:inkpad/svg/svg_importer.dart';
 import 'package:inkpad/svg/svg_path_parser.dart';
@@ -177,11 +178,11 @@ void main() {
         </g>
       '''));
       final s = shapes(r.drawing);
-      expect(s[0].fill!.hexValue, '#800080'); // inherited from <g>
-      expect(s[1].fill!.hexValue, '#008000'); // CSS beats presentation attribute
-      expect(s[2].fill!.hexValue, '#0000ff');
+      expect((s[0].fill as InkColor).hexValue, '#800080'); // inherited from <g>
+      expect((s[1].fill as InkColor).hexValue, '#008000'); // CSS beats presentation attribute
+      expect((s[2].fill as InkColor).hexValue, '#0000ff');
       expect(s[2].stroke!.width, 4);
-      expect(s[3].fill!.hexValue, '#ffff00'); // id beats class
+      expect((s[3].fill as InkColor).hexValue, '#ffff00'); // id beats class
       expect(s[3].stroke!.color.hexValue, '#00ff00'); // style="" beats CSS
       expect(s[3].stroke!.width, 2); // inherited
     });
@@ -197,10 +198,10 @@ void main() {
         <g class="icons"><g><rect width="1" height="1"/><circle r="1"/></g><circle r="2"/></g>
       '''));
       final s = shapes(r.drawing);
-      expect(s[0].fill!.hexValue, '#ff0000');
-      expect(s[1].fill!.hexValue, '#000000'); // nested deeper: `>` doesn't match
+      expect((s[0].fill as InkColor).hexValue, '#ff0000');
+      expect((s[1].fill as InkColor).hexValue, '#000000'); // nested deeper: `>` doesn't match
       expect(s[1].stroke, isNotNull);
-      expect(s[2].fill!.hexValue, '#0000ff');
+      expect((s[2].fill as InkColor).hexValue, '#0000ff');
       expect(r.warnings.single, contains('CSS selectors'));
     });
 
@@ -272,22 +273,120 @@ void main() {
       expect(r.warnings.single, contains('missing'));
     });
 
-    test('gradients become their average color; text and images are reported', () {
+    test('linear gradients: bounding-box units, href inheritance, stop rules', () {
       final r = importSvg(svg('''
         <defs>
-          <linearGradient id="g1"><stop offset="0" stop-color="#000"/><stop offset="1" style="stop-color:#fff"/></linearGradient>
-          <linearGradient id="g2" xlink:href="#g1"/>
+          <linearGradient id="base" x2="0" y2="1">
+            <stop offset="0" stop-color="#000"/><stop offset="50%" style="stop-color:#fff;stop-opacity:.5"/>
+            <stop offset="0.2" stop-color="red"/>
+          </linearGradient>
+          <linearGradient id="g" xlink:href="#base" spreadMethod="reflect"/>
         </defs>
-        <rect width="10" height="10" fill="url(#g2)"/>
+        <rect x="10" y="20" width="40" height="80" fill="url(#g)" fill-opacity="0.5"/>
         <rect width="10" height="10" fill="url(#nothing) blue"/>
         <text>Hi</text><text>There</text>
         <image href="x.png"/>
       '''));
       final s = shapes(r.drawing);
-      expect(s[0].fill!.red, closeTo(0.5, 1e-9));
+      final g = s[0].fill as InkGradient;
+      expect(g.type, GradientType.linear);
+      expect(g.spread, SpreadMethod.reflect);
+      expect(g.stops.map((s) => s.offset), [0, 0.5, 0.5]); // offsets never go backwards
+      expect(g.stops[0].color.alpha, 0.5); // fill-opacity
+      expect(g.stops[1].color.alpha, 0.25); // stop-opacity × fill-opacity
+      // x2=0 y2=1 in box units: top to bottom of the rect.
+      final geom = g.geometry!;
+      expect(geom.documentStart, const Offset(10, 20));
+      expect(geom.documentEnd, const Offset(10, 100));
       expect(s[1].fill, const InkColor(0, 0, 1));
       expect(r.warnings, containsAll(['Skipped 2 text elements', 'Skipped 1 image']));
-      expect(r.warnings.any((w) => w.contains('Gradients')), isTrue);
+      expect(r.warnings.any((w) => w.contains('radient')), isFalse);
+    });
+
+    test('radial gradients: user space, focal point, gradientTransform, element transform', () {
+      final r = importSvg(svg('''
+        <radialGradient id="r" gradientUnits="userSpaceOnUse" cx="50" cy="50" r="20" fx="40" fy="50"
+            gradientTransform="scale(1 0.5)">
+          <stop offset="0" stop-color="white"/><stop offset="1" stop-color="black"/>
+        </radialGradient>
+        <g transform="translate(100 0)"><circle cx="50" cy="25" r="20" fill="url(#r)"/></g>
+      ''', attrs: 'viewBox="0 0 200 100"'));
+      final g = shapes(r.drawing).single.fill as InkGradient;
+      expect(g.type, GradientType.radial);
+      final geom = g.geometry!;
+      expect(geom.start, const Offset(50, 50));
+      expect(geom.focal, const Offset(40, 50));
+      expect(geom.documentStart, const Offset(150, 25)); // scaled, then translated
+      expect(geom.documentEnd, const Offset(170, 25));
+    });
+
+    test('degenerate gradients fall back to a color', () {
+      final r = importSvg(svg('''
+        <linearGradient id="one"><stop offset="0" stop-color="red"/></linearGradient>
+        <linearGradient id="two"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="blue"/></linearGradient>
+        <radialGradient id="zero" r="0"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="lime"/></radialGradient>
+        <rect width="10" height="10" fill="url(#one)"/>
+        <path d="M0 0H10" stroke="black" fill="url(#two)"/>
+        <rect width="10" height="10" fill="url(#zero)"/>
+      '''));
+      final s = shapes(r.drawing);
+      expect(s[0].fill, const InkColor(1, 0, 0));
+      expect(s[1].fill, isA<InkColor>()); // flat shape: no bounding box
+      expect(s[2].fill, const InkColor(0, 1, 0));
+    });
+
+    test('gradient outlines become a solid color, with a note', () {
+      final r = importSvg(svg('''
+        <linearGradient id="g"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></linearGradient>
+        <rect width="10" height="10" fill="none" stroke="url(#g)"/>
+      '''));
+      expect(shapes(r.drawing).single.stroke!.color.red, closeTo(0.5, 1e-9));
+      expect(r.warnings.single, contains('Gradient outlines'));
+    });
+
+    test('clip paths become clipping masks', () {
+      final r = importSvg(svg('''
+        <clipPath id="c"><circle cx="50" cy="50" r="40"/></clipPath>
+        <clipPath id="box" clipPathUnits="objectBoundingBox"><rect width="0.5" height="1"/></clipPath>
+        <clipPath id="empty"></clipPath>
+        <g clip-path="url(#c)" opacity="0.5"><rect width="100" height="100" fill="red"/><rect width="10" height="10"/></g>
+        <rect x="0" y="0" width="40" height="20" clip-path="url(#box)" fill="blue"/>
+        <rect width="10" height="10" style="clip-path:url(#empty)"/>
+      '''));
+      final els = r.drawing.allElements.toList();
+      expect(els.length, 2); // an empty clip path hides its element
+      final mask = els[0] as InkPath;
+      expect(mask.fill, isNull);
+      expect(mask.stroke, isNull);
+      expect(mask.opacity, 0.5);
+      expect(mask.maskedElements.length, 2); // the group's children
+      expect(mask.bounds, near(const Rect.fromLTWH(10, 10, 80, 80)));
+      expect(mask.hitTest(const Offset(50, 50), 0), isTrue);
+      expect(mask.hitTest(const Offset(2, 2), 0), isFalse); // clipped away
+      final half = els[1] as InkPath;
+      expect(half.bounds, near(const Rect.fromLTWH(0, 0, 20, 20)));
+      expect(r.warnings, isEmpty);
+    });
+
+    test('solid white masks act as clips; soft masks become even transparency', () {
+      final r = importSvg(svg('''
+        <mask id="m"><rect x="10" y="10" width="30" height="30" fill="#fff"/></mask>
+        <mask id="soft"><rect width="50" height="50" fill="white" opacity="0.5"/></mask>
+        <linearGradient id="fade"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>
+        <mask id="fader"><rect width="50" height="50" fill="url(#fade)"/></mask>
+        <rect width="100" height="100" mask="url(#m)"/>
+        <rect width="100" height="100" mask="url(#soft)"/>
+        <rect width="100" height="100" mask="url(#fader)"/>
+      '''));
+      final els = r.drawing.allElements.cast<InkStylable>().toList();
+      expect(els[0].isMasking, isTrue);
+      expect(els[0].opacity, 1);
+      expect(els[0].bounds, near(const Rect.fromLTWH(10, 10, 30, 30)));
+      expect(els[1].isMasking, isTrue);
+      expect(els[1].opacity, closeTo(0.5, 1e-9));
+      expect(els[1].bounds, near(const Rect.fromLTWH(0, 0, 50, 50)));
+      expect(els[2].opacity, closeTo(0.5, 1e-9)); // white→black averages to half
+      expect(r.warnings.single, contains('Soft masks'));
     });
 
     test('round-trips our own SVG export', () {
@@ -305,6 +404,23 @@ void main() {
           fill: InkColor.white,
           fillRule: FillRule.evenOdd,
         ),
+      ]);
+      d.activeLayer.elements.addAll([
+        InkPath.rect(const Rect.fromLTWH(0, 100, 80, 40))
+          ..fill = InkGradient.between(InkColor.black, const InkColor(1, 1, 1, 0.5)),
+        InkPath.oval(const Rect.fromLTWH(100, 100, 60, 60))
+          ..fill = const InkGradient(
+            type: GradientType.radial,
+            spread: SpreadMethod.repeat,
+            stops: [GradientStop(0, InkColor.white), GradientStop(0.3, InkColor.black), GradientStop(1, InkColor.white)],
+            geometry: GradientGeometry(Offset(0, 0), Offset(1, 0), focal: Offset(0.2, 0),
+                transform: Affine(30, 0, 0, 15, 130, 130)),
+          ),
+        InkPath.oval(const Rect.fromLTWH(200, 100, 50, 50))
+          ..maskedElements = [
+            InkPath.rect(const Rect.fromLTWH(190, 90, 70, 70))..fill = InkColor.black,
+            InkPath.star(const Rect.fromLTWH(200, 100, 50, 50), 5)..fill = InkColor.white,
+          ],
       ]);
       d.addLayer();
       d.activeLayer

@@ -1,9 +1,24 @@
 import 'dart:ui';
 
 import 'geometry.dart';
+import 'gradient.dart';
+
+export 'gradient.dart';
+
+/// Something a shape can be filled with: a solid [InkColor] or an
+/// [InkGradient]. Ported from Inkpad's WDPathPainter protocol.
+abstract interface class InkPaint {
+  Map<String, dynamic> toJson();
+
+  /// A single color that best represents this paint (for swatches).
+  InkColor get representativeColor;
+
+  static InkPaint fromJson(Map<String, dynamic> j) =>
+      j.containsKey('stops') ? InkGradient.fromJson(j) : InkColor.fromJson(j);
+}
 
 /// RGBA color with components in 0..1. Ported (in part) from WDColor.
-class InkColor {
+class InkColor implements InkPaint {
   final double red, green, blue, alpha;
 
   const InkColor(this.red, this.green, this.blue, [this.alpha = 1]);
@@ -36,6 +51,18 @@ class InkColor {
 
   InkColor withAlpha(double a) => InkColor(red, green, blue, a);
 
+  @override
+  InkColor get representativeColor => this;
+
+  /// Linear interpolation towards [other].
+  InkColor lerp(InkColor other, double t) => InkColor(
+        red + (other.red - red) * t,
+        green + (other.green - green) * t,
+        blue + (other.blue - blue) * t,
+        alpha + (other.alpha - alpha) * t,
+      );
+
+  @override
   Map<String, dynamic> toJson() => {'r': red, 'g': green, 'b': blue, 'a': alpha};
 
   factory InkColor.fromJson(Map<String, dynamic> j) => InkColor(

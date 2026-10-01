@@ -26,8 +26,9 @@ abstract class InkElement {
 
   bool intersectsRect(Rect r) => bounds.overlaps(r);
 
-  /// The SVG markup for this element.
-  String toSvg();
+  /// The SVG markup for this element; gradients and clip paths it needs are
+  /// added to [w]'s definitions.
+  String toSvg(SvgWriter w);
 
   InkElement clone() => InkElement.fromJson(toJson());
 
@@ -43,16 +44,59 @@ abstract class InkElement {
   String opacityAttr() => opacity < 1 ? ' opacity="${fmt(opacity)}"' : '';
 }
 
+/// Collects the `<defs>` (gradients, clip paths) while a drawing is exported.
+class SvgWriter {
+  final List<String> definitions = [];
+  int _gradients = 0, _clips = 0;
+
+  /// Adds a gradient definition for a shape with [bounds]; returns its id.
+  String gradient(InkGradient g, Rect bounds) {
+    final id = 'gradient${++_gradients}';
+    definitions.add(g.svgDefinition(id, bounds));
+    return id;
+  }
+
+  /// Adds a `<clipPath>` with [shape]'s outline; returns its id.
+  String clipPath(InkStylable shape) {
+    final id = 'clip${++_clips}';
+    final rule = shape.fillRule == FillRule.evenOdd ? ' clip-rule="evenodd"' : '';
+    definitions.add('<clipPath id="$id"><path d="${shape.svgPathData}"$rule/></clipPath>');
+    return id;
+  }
+}
+
 enum FillRule { nonZero, evenOdd }
 
 /// An element with a fill and stroke, drawn from bezier geometry.
 /// Ported from WDStylable / WDAbstractPath.
+///
+/// Like Inkpad, any stylable can be a clipping mask: [maskedElements] are
+/// drawn clipped to its outline, above its own fill and below its stroke.
 abstract class InkStylable extends InkElement {
-  InkColor? fill;
+  InkPaint? fill;
   StrokeStyle? stroke;
   FillRule fillRule;
+  List<InkElement> maskedElements;
 
-  InkStylable({this.fill, this.stroke, this.fillRule = FillRule.nonZero, super.opacity});
+  InkStylable({this.fill, this.stroke, this.fillRule = FillRule.nonZero, List<InkElement>? maskedElements, super.opacity})
+      : maskedElements = maskedElements ?? [];
+
+  bool get isMasking => maskedElements.isNotEmpty;
+
+  /// Applies [t] to the outline only.
+  void transformGeometry(Affine t);
+
+  @override
+  void transform(Affine t) {
+    // A fitted gradient becomes explicit so it turns and stretches with the
+    // shape, as Inkpad's fill transform did.
+    final f = fill;
+    if (f is InkGradient) fill = f.copyWith(geometry: f.fitted(bounds).transformed(t));
+    transformGeometry(t);
+    for (final e in maskedElements) {
+      e.transform(t);
+    }
+  }
 
   Path toFlutterPath();
 
@@ -76,10 +120,38 @@ abstract class InkStylable extends InkElement {
   @override
   void render(Canvas canvas) {
     if (isEmpty) return;
-    final path = toFlutterPath();
+    // A mask's opacity applies to it and its contents as a whole.
+    if (isMasking && opacity < 1) {
+      canvas.saveLayer(styleBounds, Paint()..color = Color.fromRGBO(0, 0, 0, opacity));
+      _renderContents(canvas, 1);
+      canvas.restore();
+    } else {
+      _renderContents(canvas, opacity);
+    }
+  }
+
+  /// A paint for the fill, or null if there is none.
+  Paint? fillPaint(double opacity) {
     final f = fill;
-    if (f != null) {
-      canvas.drawPath(path, Paint()..color = f.toColor(opacity));
+    if (f == null) return null;
+    if (f is InkGradient) {
+      final shader = f.shader(bounds, opacity);
+      return shader == null ? (Paint()..color = f.stops.last.color.toColor(opacity)) : (Paint()..shader = shader);
+    }
+    return Paint()..color = (f as InkColor).toColor(opacity);
+  }
+
+  void _renderContents(Canvas canvas, double opacity) {
+    final path = toFlutterPath();
+    final paint = fillPaint(opacity);
+    if (paint != null) canvas.drawPath(path, paint);
+    if (isMasking) {
+      canvas.save();
+      canvas.clipPath(path);
+      for (final e in maskedElements) {
+        e.render(canvas);
+      }
+      canvas.restore();
     }
     final s = stroke;
     if (s != null && s.willRender) {
@@ -98,7 +170,11 @@ abstract class InkStylable extends InkElement {
   @override
   bool hitTest(Offset pt, double tolerance) {
     if (!styleBounds.inflate(tolerance).contains(pt)) return false;
-    if (fill != null && toFlutterPath().contains(pt)) return true;
+    if ((fill != null || isMasking) && toFlutterPath().contains(pt)) {
+      if (fill != null) return true;
+      // Through an unfilled mask, only the visible contents count.
+      if (maskedElements.any((e) => e.hitTest(pt, tolerance))) return true;
+    }
     final strokeSlop = (stroke?.width ?? 0) / 2 + tolerance;
     for (final s in allSegments) {
       if (s.closestPoint(pt, samples: 16).$1 <= strokeSlop) return true;
@@ -109,6 +185,7 @@ abstract class InkStylable extends InkElement {
   @override
   bool intersectsRect(Rect r) {
     if (!bounds.overlaps(r)) return false;
+    if (isMasking && maskedElements.any((e) => e.intersectsRect(r))) return true;
     for (final s in allSegments) {
       for (var i = 0; i <= 16; i++) {
         if (r.contains(s.pointAt(i / 16))) return true;
@@ -118,20 +195,36 @@ abstract class InkStylable extends InkElement {
   }
 
   @override
-  String toSvg() {
+  String toSvg(SvgWriter w) {
+    if (!isMasking) return _pathSvg(w, fill: true, stroke: true, opacity: true);
+    // A mask: its fill, then the clipped contents, then its stroke.
+    final clip = w.clipPath(this);
+    final contents = maskedElements.map((e) => e.toSvg(w)).join();
+    final parts = [
+      if (fill != null) _pathSvg(w, fill: true, stroke: false, opacity: false),
+      '<g clip-path="url(#$clip)">$contents</g>',
+      if (stroke?.willRender ?? false) _pathSvg(w, fill: false, stroke: true, opacity: false),
+    ];
+    if (parts.length == 1 && opacity == 1) return parts.single;
+    return '<g${opacityAttr()}>${parts.join()}</g>';
+  }
+
+  String _pathSvg(SvgWriter w, {required bool fill, required bool stroke, required bool opacity}) {
     final attrs = <String, String>{'d': svgPathData};
-    final f = fill;
-    if (f != null) {
+    final f = fill ? this.fill : null;
+    if (f is InkGradient) {
+      attrs['fill'] = 'url(#${w.gradient(f, bounds)})';
+    } else if (f is InkColor) {
       attrs['fill'] = f.hexValue;
       if (f.alpha != 1) attrs['fill-opacity'] = fmt(f.alpha);
     } else {
       attrs['fill'] = 'none';
     }
     if (fillRule == FillRule.evenOdd) attrs['fill-rule'] = 'evenodd';
-    final s = stroke;
+    final s = stroke ? this.stroke : null;
     if (s != null && s.willRender) attrs.addAll(s.svgAttributes());
     final a = attrs.entries.map((e) => '${e.key}="${e.value}"').join(' ');
-    return '<path $a${opacityAttr()}/>';
+    return '<path $a${opacity ? opacityAttr() : ''}/>';
   }
 
   Map<String, dynamic> styleJson() => {
@@ -139,10 +232,12 @@ abstract class InkStylable extends InkElement {
         'stroke': stroke?.toJson(),
         if (fillRule == FillRule.evenOdd) 'fillRule': 'evenOdd',
         'opacity': opacity,
+        if (isMasking) 'masked': maskedElements.map((e) => e.toJson()).toList(),
       };
 
   void readStyleJson(Map<String, dynamic> j) {
-    fill = j['fill'] == null ? null : InkColor.fromJson(j['fill']);
+    fill = j['fill'] == null ? null : InkPaint.fromJson(j['fill']);
+    maskedElements = [for (final e in (j['masked'] as List?) ?? const []) InkElement.fromJson(e)];
     stroke = j['stroke'] == null ? null : StrokeStyle.fromJson(j['stroke']);
     fillRule = j['fillRule'] == 'evenOdd' ? FillRule.evenOdd : FillRule.nonZero;
     opacity = (j['opacity'] as num).toDouble();
@@ -278,7 +373,7 @@ class InkPath extends InkStylable {
   }
 
   @override
-  void transform(Affine t) {
+  void transformGeometry(Affine t) {
     // Like Inkpad, stroke width is left unchanged by transforms.
     nodes = nodes.map((n) => n.transform(t)).toList();
   }
@@ -415,9 +510,9 @@ class InkCompoundPath extends InkStylable {
   }
 
   @override
-  void transform(Affine t) {
+  void transformGeometry(Affine t) {
     for (final p in subpaths) {
-      p.transform(t);
+      p.transformGeometry(t);
     }
   }
 
@@ -485,7 +580,7 @@ class InkGroup extends InkElement {
   bool intersectsRect(Rect r) => elements.any((e) => e.intersectsRect(r));
 
   @override
-  String toSvg() => '<g${opacityAttr()}>${elements.map((e) => e.toSvg()).join()}</g>';
+  String toSvg(SvgWriter w) => '<g${opacityAttr()}>${elements.map((e) => e.toSvg(w)).join()}</g>';
 
   @override
   Map<String, dynamic> toJson() => {

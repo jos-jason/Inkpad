@@ -4,9 +4,10 @@ import '../controller/drawing_controller.dart';
 import '../model/bezier_node.dart';
 import '../model/element.dart';
 import '../model/geometry.dart';
+import '../model/style.dart';
 import 'tool.dart';
 
-enum _Mode { none, move, anchor, handle, marquee }
+enum _Mode { none, move, anchor, handle, gradientStart, gradientEnd, marquee }
 
 /// Selects, moves and node-edits. Combines Inkpad's WDSelectionTool
 /// behaviour for elements with direct editing of the selected path's nodes.
@@ -25,6 +26,8 @@ class SelectionTool extends Tool {
   HandleKind _handle = HandleKind.anchor;
   ReflectionMode _originalMode = ReflectionMode.independent;
 
+  InkStylable? _gradientShape;
+
   // Marquee state.
   Rect? marquee;
   Set<InkElement> _baseSelection = {};
@@ -35,11 +38,27 @@ class SelectionTool extends Tool {
     _checkpointed = false;
     final tol = e.slop();
 
-    // 1. Handles/anchors of the single selected path take priority.
+    // 1. Gradient handles of the selected shape (Inkpad gave these priority).
+    final shape = c.singleSelectedStylable;
+    final fill = shape?.fill;
+    if (shape != null && fill is InkGradient) {
+      final g = fill.fitted(shape.bounds);
+      _gradientShape = shape;
+      if ((g.documentEnd - e.point).distance < tol) {
+        _mode = _Mode.gradientEnd;
+        return;
+      }
+      if ((g.documentStart - e.point).distance < tol) {
+        _mode = _Mode.gradientStart;
+        return;
+      }
+    }
+
+    // 2. Handles/anchors of the single selected path.
     final path = c.singleSelectedPath;
     if (path != null && _pickNode(path, e.point, tol)) return;
 
-    // 2. An element.
+    // 3. An element.
     final hit = c.elementAt(e.point, tol);
     if (hit != null) {
       if (e.shift && c.selection.contains(hit)) {
@@ -53,7 +72,7 @@ class SelectionTool extends Tool {
       return;
     }
 
-    // 3. Marquee on empty space.
+    // 4. Marquee on empty space.
     if (!e.shift) c.selectNone();
     _baseSelection = {...c.selection};
     _mode = _Mode.marquee;
@@ -109,6 +128,9 @@ class SelectionTool extends Tool {
         final mode = e.alt ? ReflectionMode.independent : _originalMode;
         p.nodes[_nodeIndex] = p.nodes[_nodeIndex].moveControlHandle(_handle, e.point, mode);
         c.changed();
+      case _Mode.gradientStart || _Mode.gradientEnd:
+        _ensureCheckpoint(c);
+        c.moveGradientHandle(_gradientShape!, start: _mode == _Mode.gradientStart, to: e.point);
       case _Mode.marquee:
         marquee = rectFromPoints(_start, e.point);
         c.selection
@@ -128,6 +150,7 @@ class SelectionTool extends Tool {
   void cancel(DrawingController c) {
     _mode = _Mode.none;
     _path = null;
+    _gradientShape = null;
     if (marquee != null) {
       marquee = null;
       c.changed();

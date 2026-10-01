@@ -34,11 +34,11 @@ class InkLayer {
     if (needsLayer) canvas.restore();
   }
 
-  String toSvg() {
+  String toSvg(SvgWriter w) {
     final attrs = StringBuffer(' id="${_escape(name)}"');
     if (!visible) attrs.write(' visibility="hidden"');
     if (opacity < 1) attrs.write(' opacity="${fmt(opacity)}"');
-    return '<g$attrs>${elements.map((e) => e.toSvg()).join()}</g>';
+    return '<g$attrs>${elements.map((e) => e.toSvg(w)).join()}</g>';
   }
 
   Map<String, dynamic> toJson() => {
@@ -111,8 +111,11 @@ class InkDrawing {
       ..writeln('<!-- Created with Inkpad (Flutter) -->')
       ..writeln('<svg xmlns="http://www.w3.org/2000/svg" version="1.1" '
           'width="${w}pt" height="${h}pt" viewBox="0 0 $w $h">');
-    for (final l in layers) {
-      sb.writeln(l.toSvg());
+    final writer = SvgWriter();
+    final body = [for (final l in layers) l.toSvg(writer)];
+    if (writer.definitions.isNotEmpty) sb.writeln('<defs>${writer.definitions.join()}</defs>');
+    for (final l in body) {
+      sb.writeln(l);
     }
     sb.writeln('</svg>');
     return sb.toString();

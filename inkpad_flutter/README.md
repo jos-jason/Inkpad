@@ -34,6 +34,12 @@ flutter test
 Done:
 - Document model: layers, paths, compound paths (shapes with holes), groups,
   fill, stroke (incl. dashes), opacity
+- Gradients (linear and radial, any number of stops, pad/reflect/repeat):
+  Solid / Linear / Radial fill picker, tap a stop to recolor it, add/remove/
+  reverse stops, drag the start/end handles on the canvas with the select tool
+- Clipping masks, as in Inkpad: select shapes, then Make clipping mask
+  (Ctrl/Cmd+7); the topmost shape clips the rest. Release clipping mask
+  (Shift+Ctrl/Cmd+7) puts them back
 - Tools: select / move / node & handle editing, pen, add/delete point
   (Alt-click converts corner/smooth), rectangle, oval, star,
   polygon, line, hand
@@ -48,16 +54,17 @@ Done:
   groups, `use`/`symbol`, transforms, inherited styles, CSS `<style>` rules
   (tag, class, id, descendant and child selectors), fill rules, units.
   Top-level groups become layers, as in Inkpad (Inkscape layers too).
-  Gradients import as their average color; clipping and masks are ignored;
-  text and images are skipped. Anything approximated is reported after import.
+  Gradients and clip paths import as real gradients and clipping masks;
+  solid masks become clipping masks, soft masks (fades) are approximated with
+  even transparency; gradient outlines become a solid color; text and images
+  are skipped. Anything approximated is reported after import.
   Tested against ~3,000 real-world SVGs. "Place SVG…" in the editor adds an
   SVG to the open drawing.
 - Responsive layout (side panels on desktop/tablet, bottom bar on phones)
 
 To port next (roughly in priority order):
 - Scale / rotate tools and a transform bounding box
-- Clipping masks (imported SVGs currently ignore clip-path), releasing compound paths
-- Gradients and fill transforms (`WDGradient`, `WDFillTransform`)
+- Releasing compound paths; gradient outlines (strokes)
 - Boolean path operations (`WDPathfinder` / livarot). Note: livarot comes from
   Inkscape; check its license before porting it rather than reimplementing.
 - Freehand tool with curve fitting (`CurveFit`), scissors, eraser
@@ -70,7 +77,8 @@ To port next (roughly in priority order):
 V select · P pen · A add/delete point · R rect · E oval · S star · G polygon · L line · H hand ·
 Ctrl/Cmd+Z undo · Shift+Ctrl/Cmd+Z redo · Ctrl/Cmd+D duplicate ·
 Ctrl/Cmd+G group · Shift+Ctrl/Cmd+G ungroup · Ctrl/Cmd+S save now ·
-Ctrl/Cmd+E export SVG · Delete remove · Esc/Enter finish path ·
+Ctrl/Cmd+E export SVG · Ctrl/Cmd+7 make clipping mask ·
+Shift+Ctrl/Cmd+7 release clipping mask · Delete remove · Esc/Enter finish path ·
 +/- zoom · 0 fit · 1 actual size
 
 Modifiers while dragging: Shift constrains, Alt/Option draws shapes from the

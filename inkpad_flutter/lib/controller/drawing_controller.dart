@@ -17,7 +17,9 @@ class DrawingController extends ChangeNotifier {
   InkPath? activePath;
 
   /// Style applied to newly created shapes.
-  InkColor? fillColor = const InkColor(0.35, 0.6, 0.95);
+  /// A color or gradient. Gradients here never carry geometry, so they fit
+  /// whatever shape they're applied to.
+  InkPaint? fillPaint = const InkColor(0.35, 0.6, 0.95);
   StrokeStyle? strokeStyle = const StrokeStyle(width: 2);
 
   Tool _tool;
@@ -76,7 +78,7 @@ class DrawingController extends ChangeNotifier {
   // ---- Elements ---------------------------------------------------------
 
   InkPath styledPath(InkPath p) => p
-    ..fill = fillColor
+    ..fill = fillPaint
     ..stroke = strokeStyle;
 
   void addElement(InkElement e) {
@@ -114,6 +116,13 @@ class DrawingController extends ChangeNotifier {
   void select(InkElement e, {bool extend = false}) {
     if (!extend) selection.clear();
     selection.add(e);
+    // Like Inkpad's property manager, the inspector picks up the style of
+    // what you select, so new shapes continue in that style.
+    if (!extend && e is InkStylable) {
+      final f = e.fill;
+      fillPaint = f is InkGradient ? f.copyWith(clearGeometry: true) : f;
+      strokeStyle = e.stroke;
+    }
     notifyListeners();
   }
 
@@ -141,6 +150,10 @@ class DrawingController extends ChangeNotifier {
   /// The single selected path, when exactly one path is selected.
   InkPath? get singleSelectedPath =>
       selection.length == 1 && selection.first is InkPath ? selection.first as InkPath : null;
+
+  /// The single selected shape (path or compound path).
+  InkStylable? get singleSelectedStylable =>
+      selection.length == 1 && selection.first is InkStylable ? selection.first as InkStylable : null;
 
   void transformSelection(Affine t) {
     for (final e in selection) {
@@ -232,13 +245,81 @@ class DrawingController extends ChangeNotifier {
     checkpoint();
     void apply(InkElement e) {
       if (e is InkStylable) {
-        if (fill) e.fill = fillColor;
+        if (fill) e.fill = _fillFor(e.fill, fillPaint);
         if (stroke) e.stroke = strokeStyle;
       } else if (e is InkGroup) {
         e.elements.forEach(apply);
       }
     }
     selection.forEach(apply);
+    notifyListeners();
+  }
+
+  /// A gradient applied over an existing gradient keeps that shape's
+  /// gradient position; otherwise it fits the shape.
+  static InkPaint? _fillFor(InkPaint? old, InkPaint? paint) {
+    if (paint is InkGradient && old is InkGradient && old.geometry != null) {
+      return paint.copyWith(geometry: old.geometry);
+    }
+    return paint;
+  }
+
+  // ---- Clipping masks ---------------------------------------------------
+
+  /// Selected elements in stacking order, bottom first.
+  List<InkElement> get orderedSelection =>
+      [for (final l in drawing.layers) ...l.elements.where(selection.contains)];
+
+  /// Ported from -[WDDrawingController canMaskElements]: the topmost
+  /// selected element must be a shape, with something below it to clip.
+  bool get canMakeMask {
+    final ordered = orderedSelection;
+    return ordered.length > 1 && ordered.last is InkStylable && !(ordered.last as InkStylable).isMasking;
+  }
+
+  bool get canReleaseMask => selection.any((e) => e is InkStylable && e.isMasking);
+
+  /// Ported from -[WDDrawingController makeMask:]: the topmost selected
+  /// shape clips the other selected elements.
+  void makeMask() {
+    if (!canMakeMask) return;
+    checkpoint();
+    final ordered = orderedSelection;
+    final mask = ordered.removeLast() as InkStylable;
+    for (final l in drawing.layers) {
+      l.elements.removeWhere(ordered.contains);
+    }
+    mask.maskedElements = ordered;
+    selection
+      ..clear()
+      ..add(mask);
+    notifyListeners();
+  }
+
+  /// Ported from -[WDDrawingController releaseMask:]: the clipped elements
+  /// go back into the layer, just above the shape that clipped them.
+  void releaseMask() {
+    final masks = orderedSelection.whereType<InkStylable>().where((e) => e.isMasking).toList();
+    if (masks.isEmpty) return;
+    checkpoint();
+    for (final mask in masks) {
+      final layer = layerOf(mask)!;
+      final released = mask.maskedElements;
+      mask.maskedElements = [];
+      layer.elements.insertAll(layer.elements.indexOf(mask) + 1, released);
+      selection.addAll(released);
+    }
+    notifyListeners();
+  }
+
+  // ---- Gradient editing -------------------------------------------------
+
+  /// Moves an end of the selected shape's gradient to a document point.
+  void moveGradientHandle(InkStylable shape, {required bool start, required Offset to}) {
+    final g = shape.fill;
+    if (g is! InkGradient) return;
+    final geom = g.fitted(shape.bounds);
+    shape.fill = g.copyWith(geometry: start ? geom.withDocumentStart(to) : geom.withDocumentEnd(to));
     notifyListeners();
   }
 

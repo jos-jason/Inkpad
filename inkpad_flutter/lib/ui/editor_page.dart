@@ -139,6 +139,8 @@ class _EditorPageState extends State<EditorPage> {
         k(LogicalKeyboardKey.keyG, shift: true): c.ungroupSelection,
         k(LogicalKeyboardKey.bracketRight, shift: true): c.bringToFront,
         k(LogicalKeyboardKey.bracketLeft, shift: true): c.sendToBack,
+        k(LogicalKeyboardKey.digit7): c.makeMask,
+        k(LogicalKeyboardKey.digit7, shift: true): c.releaseMask,
         k(LogicalKeyboardKey.keyS): _saveNow,
         k(LogicalKeyboardKey.keyE): () => exportSvg(context, c.drawing, widget.info.name),
       });
@@ -238,6 +240,9 @@ class _EditorPageState extends State<EditorPage> {
             PopupMenuItem(enabled: hasSel, value: c.ungroupSelection, child: const Text('Ungroup')),
             PopupMenuItem(enabled: hasSel, value: c.bringToFront, child: const Text('Bring to front')),
             PopupMenuItem(enabled: hasSel, value: c.sendToBack, child: const Text('Send to back')),
+            const PopupMenuDivider(),
+            PopupMenuItem(enabled: c.canMakeMask, value: c.makeMask, child: const Text('Make clipping mask')),
+            PopupMenuItem(enabled: c.canReleaseMask, value: c.releaseMask, child: const Text('Release clipping mask')),
           ],
         ),
       ],
