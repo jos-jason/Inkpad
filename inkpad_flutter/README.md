@@ -50,7 +50,8 @@ Done:
 - Clipping masks, as in Inkpad: select shapes, then Make clipping mask
   (Ctrl/Cmd+7); the topmost shape clips the rest. Release clipping mask
   (Shift+Ctrl/Cmd+7) puts them back
-- Tools: select / move / scale / rotate / node & handle editing, pen, add/delete point
+- Tools: select / move / scale / rotate / node & handle editing (double-click
+  or double-tap a point to add or remove its handles), pen, add/delete point
   (Alt-click converts corner/smooth), rectangle, oval, star,
   polygon, line, hand
 - Pan & zoom: pinch, trackpad, ctrl/cmd + scroll wheel, space-drag, middle mouse

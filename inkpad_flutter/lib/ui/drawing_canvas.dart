@@ -74,9 +74,26 @@ class DrawingCanvasState extends State<DrawingCanvas> {
 
   void actualSize() => zoomBy(1 / _scale);
 
-  ToolEvent _event(Offset screen) {
+  ToolEvent _event(Offset screen, {int count = 1}) {
     final keys = HardwareKeyboard.instance;
-    return ToolEvent(toDoc(screen), _scale, shift: keys.isShiftPressed, alt: keys.isAltPressed);
+    return ToolEvent(toDoc(screen), _scale, shift: keys.isShiftPressed, alt: keys.isAltPressed, count: count);
+  }
+
+  // Click counting, for double clicks and double taps.
+  static const _multiTapTime = Duration(milliseconds: 350);
+  static const _multiTapSlop = 24.0; // screen pixels
+  Duration? _lastDownTime;
+  Offset _lastDownPosition = Offset.zero;
+  int _tapCount = 0;
+
+  int _countTap(PointerDownEvent e) {
+    final last = _lastDownTime;
+    final quick = last != null && e.timeStamp - last <= _multiTapTime;
+    final close = (e.localPosition - _lastDownPosition).distance <= _multiTapSlop;
+    _tapCount = quick && close ? _tapCount + 1 : 1;
+    _lastDownTime = e.timeStamp;
+    _lastDownPosition = e.localPosition;
+    return _tapCount;
   }
 
   void _onDown(PointerDownEvent e) {
@@ -103,7 +120,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       _panning = true;
     } else {
       _toolPointer = e.pointer;
-      c.tool.begin(c, _event(e.localPosition));
+      c.tool.begin(c, _event(e.localPosition, count: _countTap(e)));
     }
   }
 

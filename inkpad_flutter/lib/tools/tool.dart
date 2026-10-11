@@ -20,7 +20,11 @@ class ToolEvent {
   /// Shift: constrain. Alt/Option: independent handles / draw from center.
   final bool shift, alt;
 
-  const ToolEvent(this.point, this.viewScale, {this.shift = false, this.alt = false});
+  /// 1 for a single click or tap, 2 for a double, and so on.
+  /// Ported from WDEvent's count.
+  final int count;
+
+  const ToolEvent(this.point, this.viewScale, {this.shift = false, this.alt = false, this.count = 1});
 
   /// Hit tolerance of [pixels] screen pixels, in document units.
   double slop([double pixels = 8]) => pixels / viewScale;

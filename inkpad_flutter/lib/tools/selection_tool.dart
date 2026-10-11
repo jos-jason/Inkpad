@@ -87,9 +87,18 @@ class SelectionTool extends Tool {
       }
     }
 
-    // 2. Handles/anchors of the single selected path.
+    // 2. Handles/anchors of the single selected path. Double-clicking a point
+    // adds or removes its handles (Inkpad's convertNode).
     final path = c.singleSelectedPath;
-    if (path != null && _pickNode(path, e.point, tol)) return;
+    if (path != null && _pickNode(path, e.point, tol)) {
+      if (e.count == 2 && _mode == _Mode.anchor) {
+        c.checkpoint();
+        path.convertAnchor(_nodeIndex);
+        c.changed();
+        _mode = _Mode.none;
+      }
+      return;
+    }
 
     // 3. Scale handles around the selection (Inkpad had a separate scale tool).
     final bounds = c.selectionBounds;
