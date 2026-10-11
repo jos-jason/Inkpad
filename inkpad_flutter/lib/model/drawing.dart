@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'element.dart';
 import 'geometry.dart';
+import 'style.dart';
 
 /// Ported from WDLayer.
 class InkLayer {
@@ -11,6 +12,9 @@ class InkLayer {
   bool visible;
   bool locked;
   double opacity;
+
+  /// Color used to show this layer's selections. Ported from WDLayer.
+  InkColor highlightColor;
   final List<InkElement> elements;
 
   InkLayer({
@@ -18,8 +22,21 @@ class InkLayer {
     this.visible = true,
     this.locked = false,
     this.opacity = 1,
+    this.highlightColor = defaultHighlight,
     List<InkElement>? elements,
   }) : elements = elements ?? [];
+
+  static const defaultHighlight = InkColor(0.04, 0.52, 1);
+
+  /// Highlight colors handed out to new layers in turn.
+  static const highlightColors = [
+    defaultHighlight,
+    InkColor(0.8, 0.2, 0.4),
+    InkColor(0.2, 0.7, 0.3),
+    InkColor(0.95, 0.55, 0.05),
+    InkColor(0.55, 0.3, 0.85),
+    InkColor(0.1, 0.7, 0.75),
+  ];
 
   bool get editable => visible && !locked;
 
@@ -47,6 +64,7 @@ class InkLayer {
         'visible': visible,
         'locked': locked,
         'opacity': opacity,
+        'highlight': highlightColor.toJson(),
         'elements': elements.map((e) => e.toJson()).toList(),
       };
 
@@ -55,6 +73,7 @@ class InkLayer {
         visible: j['visible'],
         locked: j['locked'],
         opacity: (j['opacity'] as num).toDouble(),
+        highlightColor: j['highlight'] == null ? defaultHighlight : InkColor.fromJson(j['highlight']),
         elements: (j['elements'] as List).map((e) => InkElement.fromJson(e)).toList(),
       );
 }
@@ -66,11 +85,22 @@ class InkDrawing {
   final List<InkLayer> layers;
   int activeLayerIndex;
 
+  /// Ruler units (a key of [unitSizes]). Ported from WDDrawing's units setting.
+  String units;
+
+  /// Ported from WDDrawing's rulersVisible setting.
+  bool showRulers;
+
+  /// Document units (points) per ruler unit.
+  static const unitSizes = {'in': 72.0, 'cm': 72 / 2.54, 'mm': 72 / 25.4, 'pt': 1.0, 'px': 1.0};
+
   InkDrawing({
     this.width = 768,
     this.height = 1024,
     List<InkLayer>? layers,
     this.activeLayerIndex = 0,
+    this.units = 'in',
+    this.showRulers = true,
   }) : layers = layers ?? [InkLayer(name: 'Layer 1')];
 
   Rect get bounds => Rect.fromLTWH(0, 0, width, height);
@@ -94,8 +124,25 @@ class InkDrawing {
   }
 
   void addLayer() {
-    layers.insert(activeLayerIndex + 1, InkLayer(name: uniqueLayerName()));
+    layers.insert(
+      activeLayerIndex + 1,
+      InkLayer(name: uniqueLayerName(), highlightColor: InkLayer.highlightColors[layers.length % InkLayer.highlightColors.length]),
+    );
     activeLayerIndex++;
+  }
+
+  /// Ported from -[WDDrawing duplicateActiveLayer].
+  void duplicateActiveLayer() {
+    final copy = InkLayer.fromJson(activeLayer.toJson())..name = '${activeLayer.name} copy';
+    layers.insert(activeLayerIndex + 1, copy);
+    activeLayerIndex++;
+  }
+
+  /// Ported from -[WDDrawing moveLayerAtIndex:toIndex:].
+  void moveLayer(int from, int to) {
+    final active = activeLayer;
+    layers.insert(to, layers.removeAt(from));
+    activeLayerIndex = layers.indexOf(active);
   }
 
   void deleteActiveLayer() {
@@ -137,6 +184,8 @@ class InkDrawing {
         'width': width,
         'height': height,
         'activeLayer': activeLayerIndex,
+        'units': units,
+        'rulers': showRulers,
         'layers': layers.map((l) => l.toJson()).toList(),
         if (includeImages && images.isNotEmpty)
           'images': {for (final d in images) d.id: base64Encode(d.bytes)},
@@ -151,6 +200,8 @@ class InkDrawing {
       width: (j['width'] as num).toDouble(),
       height: (j['height'] as num).toDouble(),
       activeLayerIndex: j['activeLayer'],
+      units: j['units'] as String? ?? 'in',
+      showRulers: j['rulers'] as bool? ?? true,
       layers: (j['layers'] as List).map((l) => InkLayer.fromJson(l)).toList(),
     );
   }

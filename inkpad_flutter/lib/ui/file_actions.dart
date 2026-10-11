@@ -80,6 +80,8 @@ void reportImport(BuildContext context, List<ImportedFile> files) {
       for (final w in f.warnings) files.length == 1 ? w : '${f.name}: $w',
   ];
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    behavior: SnackBarBehavior.floating,
+    margin: snackMargin,
     content: Text(notes.isEmpty ? summary : '$summary, with some differences'),
     action: notes.isEmpty
         ? null
@@ -126,7 +128,10 @@ Future<void> _save(BuildContext context, String name, List<int> bytes, String mi
 }
 
 void showSnack(BuildContext context, String msg) =>
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating, margin: snackMargin));
+
+/// Floating messages sit above the editor's bottom bar rather than over it.
+const snackMargin = EdgeInsets.fromLTRB(16, 0, 16, 88);
 
 /// Simple text prompt, used for renaming.
 Future<String?> promptForText(BuildContext context, {required String title, required String initial}) {

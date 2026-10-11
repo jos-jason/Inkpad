@@ -76,10 +76,10 @@ void main() {
 
     await tester.tap(find.text('New drawing'));
     await tester.pumpAndSettle();
-    expect(find.text('Untitled'), findsOneWidget); // editor title
+    expect(find.textContaining('Untitled @'), findsOneWidget); // editor title
 
     // Draw a rectangle with the rectangle tool.
-    await tester.tap(find.byIcon(Icons.crop_square));
+    await tester.tap(find.byTooltip('Rectangle (R)'));
     await tester.pump();
     final canvas = tester.getCenter(find.byType(DrawingCanvas));
     await tester.dragFrom(canvas, const Offset(80, 60));
@@ -91,9 +91,9 @@ void main() {
     expect(DrawingInfo.decode('x', store.files.values.single).drawing.allElements.length, 1);
 
     // Back to the library; the edit is saved.
-    await tester.pageBack();
+    await tester.tap(find.text('Gallery'));
     await tester.pumpAndSettle();
-    expect(find.text('Library'), findsOneWidget);
+    expect(find.text('Gallery'), findsOneWidget);
     expect(find.text('Untitled'), findsOneWidget);
     final saved = DrawingInfo.decode('x', store.files.values.single);
     expect(saved.drawing.allElements.length, 1);

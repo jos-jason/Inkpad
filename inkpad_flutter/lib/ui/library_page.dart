@@ -89,7 +89,7 @@ class _LibraryPageState extends State<LibraryPage> {
         }
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Library'),
+            title: const Text('Gallery'),
             actions: [
               IconButton(
                 tooltip: 'Import SVG or .inkpad files',

@@ -54,6 +54,42 @@ class InkColor implements InkPaint {
   @override
   InkColor get representativeColor => this;
 
+  /// From hue (degrees), saturation and brightness (0..1), as in Inkpad's
+  /// HSB color pickers.
+  factory InkColor.hsb(double hue, double saturation, double brightness, [double alpha = 1]) {
+    final h = (hue % 360) / 60, c = brightness * saturation;
+    final x = c * (1 - ((h % 2) - 1).abs()), m = brightness - c;
+    final (r, g, b) = switch (h.floor()) {
+      0 => (c, x, 0.0),
+      1 => (x, c, 0.0),
+      2 => (0.0, c, x),
+      3 => (0.0, x, c),
+      4 => (x, 0.0, c),
+      _ => (c, 0.0, x),
+    };
+    return InkColor(r + m, g + m, b + m, alpha);
+  }
+
+  double get brightness => [red, green, blue].reduce((a, b) => a > b ? a : b);
+
+  double get saturation {
+    final max = brightness, min = [red, green, blue].reduce((a, b) => a < b ? a : b);
+    return max == 0 ? 0 : (max - min) / max;
+  }
+
+  /// Hue in degrees (0 for grays).
+  double get hue {
+    final max = brightness, min = [red, green, blue].reduce((a, b) => a < b ? a : b);
+    final d = max - min;
+    if (d == 0) return 0;
+    final h = max == red
+        ? ((green - blue) / d) % 6
+        : max == green
+            ? (blue - red) / d + 2
+            : (red - green) / d + 4;
+    return (h * 60 + 360) % 360;
+  }
+
   /// Linear interpolation towards [other].
   InkColor lerp(InkColor other, double t) => InkColor(
         red + (other.red - red) * t,
@@ -106,13 +142,13 @@ class StrokeStyle {
 
   bool get willRender => width > 0 && color.alpha > 0;
 
-  StrokeStyle copyWith({double? width, InkColor? color, LineCap? cap, LineJoin? join}) =>
+  StrokeStyle copyWith({double? width, InkColor? color, LineCap? cap, LineJoin? join, List<double>? dashPattern}) =>
       StrokeStyle(
         width: width ?? this.width,
         cap: cap ?? this.cap,
         join: join ?? this.join,
         color: color ?? this.color,
-        dashPattern: dashPattern,
+        dashPattern: dashPattern ?? this.dashPattern,
       );
 
   StrokeCap get flutterCap => switch (cap) {

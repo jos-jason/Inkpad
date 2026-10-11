@@ -14,6 +14,12 @@ enum ShapeKind { rectangle, oval, star, polygon, line }
 class ShapeTool extends Tool {
   final ShapeKind kind;
 
+  // Options, as in Inkpad's shape tool options panel.
+  double cornerRadius = 0;
+  int starPoints = 5;
+  double starInnerRatio = 0.45;
+  int polygonSides = 6;
+
   ShapeTool(this.kind);
 
   @override
@@ -73,10 +79,10 @@ class ShapeTool extends Tool {
         : rectFromPoints(_start, _start + d);
 
     return switch (kind) {
-      ShapeKind.rectangle => InkPath.rect(rect),
+      ShapeKind.rectangle => InkPath.roundedRect(rect, cornerRadius),
       ShapeKind.oval => InkPath.oval(rect),
-      ShapeKind.star => InkPath.star(rect, 5, innerRatio: 0.45),
-      ShapeKind.polygon => _polygon(rect, 6),
+      ShapeKind.star => InkPath.star(rect, starPoints, innerRatio: starInnerRatio),
+      ShapeKind.polygon => _polygon(rect, polygonSides),
       ShapeKind.line => throw StateError('handled above'),
     };
   }

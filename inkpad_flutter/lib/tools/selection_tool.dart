@@ -246,7 +246,21 @@ class SelectionTool extends Tool {
   }
 
   @override
-  void end(DrawingController c, ToolEvent e) => cancel(c);
+  void end(DrawingController c, ToolEvent e) {
+    // Remember whole-selection transforms for Transform Again.
+    if (_checkpointed) {
+      switch (_mode) {
+        case _Mode.move:
+          final d = _last - _start;
+          c.recordTransform(Affine.translation(d.dx, d.dy));
+        case _Mode.scale || _Mode.rotate:
+          c.recordTransform(_applied);
+        default:
+          break;
+      }
+    }
+    cancel(c);
+  }
 
   @override
   void cancel(DrawingController c) {

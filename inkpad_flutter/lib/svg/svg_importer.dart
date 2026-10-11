@@ -641,26 +641,9 @@ class _SvgImporter {
     ry ??= rx;
     final r = Rect.fromLTWH(x, y, w, h);
     if (rx == null || ry == null || rx <= 0 || ry <= 0) return [InkPath.rect(r)];
-    return [_roundedRect(r, math.min(rx, w / 2), math.min(ry, h / 2))];
+    return [InkPath.roundedRect(r, math.min(rx, w / 2), math.min(ry, h / 2))];
   }
 
-  InkPath _roundedRect(Rect r, double rx, double ry) {
-    const k = 0.5522847498;
-    final kx = rx * k, ky = ry * k;
-    BezierNode node(double ix, double iy, double ax, double ay, double ox, double oy) =>
-        BezierNode(Offset(ix, iy), Offset(ax, ay), Offset(ox, oy));
-    final l = r.left, t = r.top, rt = r.right, b = r.bottom;
-    return InkPath(closed: true, nodes: [
-      node(l + rx - kx, t, l + rx, t, l + rx, t),
-      node(rt - rx, t, rt - rx, t, rt - rx + kx, t),
-      node(rt, t + ry - ky, rt, t + ry, rt, t + ry),
-      node(rt, b - ry, rt, b - ry, rt, b - ry + ky),
-      node(rt - rx + kx, b, rt - rx, b, rt - rx, b),
-      node(l + rx, b, l + rx, b, l + rx - kx, b),
-      node(l, b - ry + ky, l, b - ry, l, b - ry),
-      node(l, t + ry, l, t + ry, l, t + ry - ky),
-    ]);
-  }
 
   /// Builds a styled path (or compound path) from local-space geometry.
   InkElement? _shape(List<InkPath> subpaths, _Context context, {bool canFill = true}) {

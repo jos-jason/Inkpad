@@ -96,7 +96,7 @@ void main() {
     await tester.pumpAndSettle();
 
     picker.next = [_FakeFile('Logo.svg', _logo)];
-    await tester.tap(find.byTooltip('More'));
+    await tester.tap(find.byTooltip('Place image'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Place SVG…'));
     await tester.pumpAndSettle();
@@ -109,7 +109,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Undo'));
     await tester.pumpAndSettle();
-    await tester.pageBack();
+    await tester.tap(find.text('Gallery'));
     await tester.pumpAndSettle();
     expect(lib.drawings.single.drawing.allElements, isEmpty);
   });

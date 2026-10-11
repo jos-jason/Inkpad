@@ -62,12 +62,12 @@ void main() {
     await tester.pumpAndSettle();
 
     // Draw a rectangle, then switch to the select tool.
-    await tester.tap(find.byIcon(Icons.crop_square));
+    await tester.tap(find.byTooltip('Rectangle (R)'));
     await tester.pump();
     final center = tester.getCenter(find.byType(DrawingCanvas));
     await tester.dragFrom(center, const Offset(100, 60));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.near_me_outlined));
+    await tester.tap(find.byTooltip('Select (V)'));
     await tester.pump();
 
     final state = tester.state<DrawingCanvasState>(find.byType(DrawingCanvas));

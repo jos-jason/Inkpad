@@ -5,16 +5,45 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../controller/drawing_controller.dart';
+import '../model/drawing.dart';
 import '../model/element.dart';
 import '../model/style.dart';
 import '../tools/tool.dart';
 
-/// Screen-space view of the drawing: screen = doc * scale + offset.
-/// Plays the role of Inkpad's WDCanvas.
+/// Where the canvas is looking: screen = doc * scale + offset. Shared with
+/// the rulers and the zoom readout.
+class CanvasView extends ChangeNotifier {
+  double _scale = 1;
+  Offset _offset = Offset.zero;
+
+  double get scale => _scale;
+  Offset get offset => _offset;
+
+  set scale(double v) {
+    if (v == _scale) return;
+    _scale = v;
+    notifyListeners();
+  }
+
+  set offset(Offset v) {
+    if (v == _offset) return;
+    _offset = v;
+    notifyListeners();
+  }
+
+  Offset toDoc(Offset screen) => (screen - _offset) / _scale;
+  Offset toScreen(Offset doc) => doc * _scale + _offset;
+}
+
+/// Screen-space view of the drawing. Plays the role of Inkpad's WDCanvas.
 class DrawingCanvas extends StatefulWidget {
   final DrawingController controller;
+  final CanvasView? view;
 
-  const DrawingCanvas({super.key, required this.controller});
+  /// Space covered by floating panels, kept clear when fitting the page.
+  final EdgeInsets fitPadding;
+
+  const DrawingCanvas({super.key, required this.controller, this.view, this.fitPadding = EdgeInsets.zero});
 
   @override
   State<DrawingCanvas> createState() => DrawingCanvasState();
@@ -23,8 +52,11 @@ class DrawingCanvas extends StatefulWidget {
 class DrawingCanvasState extends State<DrawingCanvas> {
   static const minScale = 0.05, maxScale = 64.0;
 
-  double _scale = 1;
-  Offset _offset = Offset.zero;
+  late final CanvasView view = widget.view ?? CanvasView();
+  double get _scale => view.scale;
+  set _scale(double v) => view.scale = v;
+  Offset get _offset => view.offset;
+  set _offset(Offset v) => view.offset = v;
   Size _size = Size.zero;
   bool _needsFit = true;
 
@@ -49,17 +81,13 @@ class DrawingCanvasState extends State<DrawingCanvas> {
   void fitToScreen() {
     if (_size.isEmpty) return;
     final d = c.drawing;
-    const margin = 32.0;
-    final s = math.min(
-      (_size.width - margin * 2) / d.width,
-      (_size.height - margin * 2) / d.height,
-    ).clamp(minScale, maxScale);
+    const margin = 24.0;
+    final area = widget.fitPadding.deflateRect(Offset.zero & _size).deflate(margin);
+    if (area.isEmpty) return;
+    final s = math.min(area.width / d.width, area.height / d.height).clamp(minScale, maxScale);
     setState(() {
       _scale = s;
-      _offset = Offset(
-        (_size.width - d.width * s) / 2,
-        (_size.height - d.height * s) / 2,
-      );
+      _offset = area.center - Offset(d.width * s / 2, d.height * s / 2);
     });
   }
 
@@ -252,13 +280,18 @@ class _CanvasPainter extends CustomPainter {
     required this.colors,
   });
 
-  static const selectionColor = Color(0xFF0A84FF);
+  /// The highlight color of the selection's layer (as in Inkpad).
+  late final Color selectionColor = () {
+    final first = controller.selection.firstOrNull;
+    final layer = first == null ? null : controller.layerOf(first);
+    return (layer?.highlightColor ?? InkLayer.defaultHighlight).toColor();
+  }();
 
   @override
   void paint(Canvas canvas, Size size) {
     final drawing = controller.drawing;
 
-    canvas.drawRect(Offset.zero & size, Paint()..color = colors.surfaceContainerHighest);
+    canvas.drawRect(Offset.zero & size, Paint()..color = colors.surfaceContainerLow);
 
     canvas.save();
     canvas.translate(offset.dx, offset.dy);

@@ -31,6 +31,14 @@ flutter test
 
 ## Status
 
+Interface: modelled on Inkpad's iPad layout — a full-screen canvas with
+rulers and floating panels: Gallery / title & zoom / zoom, place, settings,
+share along the top; a tool palette with fly-outs on the left (with tool
+options such as corner radius, star points, polygon sides); Edit / Arrange /
+Path menus, undo/redo, and shadow & opacity, stroke, fill and Layers popovers
+along the bottom. On phones the same panels share the width and popovers
+open as bottom sheets. Items not built yet are shown greyed out.
+
 Done:
 - Document model: layers, paths, compound paths (shapes with holes), groups,
   fill, stroke (incl. dashes), opacity
@@ -43,6 +51,16 @@ Done:
   once per drawing however often they're used, and can be clipped by masks
 - Scale handles: drag a selection corner with the select tool to resize
   (proportional; Shift for free, Alt from the center)
+- Edit menu: select all / in layer, deselect, cut, copy, paste, duplicate,
+  duplicate in place, transform again, duplicate & transform again, delete
+- Arrange menu: forward/backward one step, front/back, flip, rotate 90°,
+  distribute, group/ungroup, align left/center/right/top/middle/bottom
+- Stroke panel: HSB/alpha/hex color, caps, joins, width, dash & gap pairs
+- Fill panel: none / color / gradient, draggable gradient stops
+- Layers panel: add, duplicate, delete, rename, show/hide, lock, highlight
+  color, drag to reorder, opacity
+- Rulers in in/cm/mm/pt/px (Settings)
+- Scale tool (port of WDScaleTool), alongside the scale handles
 - Rotation: the knob above a selection (select tool), or the Rotate tool
   (port of WDRotateTool: tap to move the pivot, drag to rotate; O). Shift
   snaps to 15°. Rotate 90° left/right and Flip horizontally/vertically
@@ -74,7 +92,12 @@ Done:
   SVG to the open drawing.
 - Responsive layout (side panels on desktop/tablet, bottom bar on phones)
 
-To port next (roughly in priority order):
+To port next (roughly in priority order; greyed out in the UI):
+- Direct-select tool with point selection (then Delete Anchor Points)
+- Path menu: add anchor points, join, outline stroke, combine/separate,
+  unite/intersect/subtract front/exclude
+- Shadows; swatch library; scissors, eraser, freehand & brush, spiral,
+  eyedropper; arrowheads
 - Releasing compound paths; gradient outlines (strokes)
 - Boolean path operations (`WDPathfinder` / livarot). Note: livarot comes from
   Inkscape; check its license before porting it rather than reimplementing.

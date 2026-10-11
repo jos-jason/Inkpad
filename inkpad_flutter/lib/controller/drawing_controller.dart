@@ -9,6 +9,9 @@ import '../model/geometry.dart';
 import '../model/style.dart';
 import '../tools/tool.dart';
 
+/// Ported from WDAlignment.
+enum AlignEdge { left, center, right, top, middle, bottom }
+
 /// Owns the document, selection, undo history and the active tool.
 /// Plays the role of Inkpad's WDDrawingController + WDPropertyManager.
 class DrawingController extends ChangeNotifier {
@@ -82,7 +85,8 @@ class DrawingController extends ChangeNotifier {
 
   InkPath styledPath(InkPath p) => p
     ..fill = fillPaint
-    ..stroke = strokeStyle;
+    ..stroke = strokeStyle
+    ..opacity = defaultOpacity;
 
   void addElement(InkElement e) {
     drawing.activeLayer.elements.add(e);
@@ -135,10 +139,18 @@ class DrawingController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Everything in every visible, unlocked layer.
   void selectAll() {
     selection
       ..clear()
-      ..addAll(drawing.activeLayer.elements);
+      ..addAll([for (final l in drawing.layers) if (l.editable) ...l.elements]);
+    notifyListeners();
+  }
+
+  void selectAllInLayer() {
+    selection
+      ..clear()
+      ..addAll(drawing.activeLayer.editable ? drawing.activeLayer.elements : const []);
     notifyListeners();
   }
 
@@ -175,12 +187,46 @@ class DrawingController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void duplicateSelection() {
+  // ---- Clipboard (ported from WDDrawingController copy:/paste:) ----------
+
+  List<Map<String, dynamic>> _clipboard = [];
+
+  bool get canPaste => _clipboard.isNotEmpty;
+
+  void copySelection() {
+    if (selection.isEmpty) return;
+    _clipboard = [for (final e in orderedSelection) e.toJson()];
+    notifyListeners();
+  }
+
+  void cutSelection() {
+    copySelection();
+    deleteSelection();
+  }
+
+  /// Pastes in place into the active layer and selects the result.
+  void paste() {
+    if (_clipboard.isEmpty) return;
+    checkpoint();
+    final pasted = [for (final j in _clipboard) InkElement.fromJson(j)];
+    drawing.activeLayer.elements.addAll(pasted);
+    selection
+      ..clear()
+      ..addAll(pasted);
+    notifyListeners();
+  }
+
+  /// Copies of the selection exactly on top of the originals.
+  void duplicateInPlace() => _duplicate(Affine.identity);
+
+  void duplicateSelection() => _duplicate(Affine.translation(10, 10));
+
+  void _duplicate(Affine offset) {
     if (selection.isEmpty) return;
     checkpoint();
     final copies = <InkElement>[];
-    for (final e in selection) {
-      final c = e.clone()..transform(Affine.translation(10, 10));
+    for (final e in orderedSelection) {
+      final c = e.clone()..transform(offset);
       (layerOf(e) ?? drawing.activeLayer).elements.add(c);
       copies.add(c);
     }
@@ -227,6 +273,30 @@ class DrawingController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Moves each selected element up past the next unselected one.
+  /// Ported from -[WDLayer bringForward:].
+  void bringForward() => _step(up: true);
+
+  /// Ported from -[WDLayer sendBackward:].
+  void sendBackward() => _step(up: false);
+
+  void _step({required bool up}) {
+    if (selection.isEmpty) return;
+    checkpoint();
+    for (final l in drawing.layers) {
+      final els = l.elements;
+      final indices = [for (var i = 0; i < els.length; i++) if (selection.contains(els[i])) i];
+      for (final i in up ? indices.reversed : indices) {
+        final j = up ? i + 1 : i - 1;
+        if (j < 0 || j >= els.length || selection.contains(els[j])) continue;
+        final e = els[i];
+        els[i] = els[j];
+        els[j] = e;
+      }
+    }
+    notifyListeners();
+  }
+
   void bringToFront() => _reorder(toFront: true);
   void sendToBack() => _reorder(toFront: false);
 
@@ -243,9 +313,11 @@ class DrawingController extends ChangeNotifier {
   }
 
   /// Applies the current fill/stroke to the selection (like the style inspector).
-  void applyStyleToSelection({bool fill = false, bool stroke = false}) {
+  /// Pass record: false while a slider is moving (call [checkpoint] once
+  /// when it starts), so a drag is one undo step.
+  void applyStyleToSelection({bool fill = false, bool stroke = false, bool record = true}) {
     if (selection.isEmpty) return;
-    checkpoint();
+    if (record) checkpoint();
     void apply(InkElement e) {
       if (e is InkStylable) {
         if (fill) e.fill = _fillFor(e.fill, fillPaint);
@@ -267,6 +339,105 @@ class DrawingController extends ChangeNotifier {
     return paint;
   }
 
+  // ---- Paths -------------------------------------------------------------
+
+  bool get canReversePaths => selection.any((e) => e is InkPath || e is InkCompoundPath);
+
+  /// Ported from -[WDDrawingController reversePathDirection:].
+  void reversePaths() {
+    if (!canReversePaths) return;
+    checkpoint();
+    for (final e in selection) {
+      if (e is InkPath) e.reverse();
+      if (e is InkCompoundPath) {
+        for (final p in e.subpaths) {
+          p.reverse();
+        }
+      }
+    }
+    notifyListeners();
+  }
+
+  // ---- Align and distribute (ported from WDDrawingController) ------------
+
+  /// Aligns the selected elements to their combined bounds, or a single
+  /// element to the page. Ported from -[WDDrawingController align...].
+  void align(AlignEdge edge) {
+    final target = selection.length == 1 ? drawing.bounds : selectionBounds;
+    if (target == null) return;
+    checkpoint();
+    for (final e in selection) {
+      final b = e.bounds;
+      final d = switch (edge) {
+        AlignEdge.left => Offset(target.left - b.left, 0),
+        AlignEdge.center => Offset(target.center.dx - b.center.dx, 0),
+        AlignEdge.right => Offset(target.right - b.right, 0),
+        AlignEdge.top => Offset(0, target.top - b.top),
+        AlignEdge.middle => Offset(0, target.center.dy - b.center.dy),
+        AlignEdge.bottom => Offset(0, target.bottom - b.bottom),
+      };
+      e.transform(Affine.translation(d.dx, d.dy));
+    }
+    notifyListeners();
+  }
+
+  /// Spaces the centers of three or more elements evenly.
+  void distribute({required bool horizontal}) {
+    if (selection.length < 3) return;
+    checkpoint();
+    double c(InkElement e) => horizontal ? e.bounds.center.dx : e.bounds.center.dy;
+    final sorted = selection.toList()..sort((a, b) => c(a).compareTo(c(b)));
+    final first = c(sorted.first), step = (c(sorted.last) - first) / (sorted.length - 1);
+    for (final (i, e) in sorted.indexed) {
+      final d = first + step * i - c(e);
+      e.transform(horizontal ? Affine.translation(d, 0) : Affine.translation(0, d));
+    }
+    notifyListeners();
+  }
+
+  // ---- Transform again (ported from WDDrawingController) ----------------
+
+  /// The last whole move, scale, rotation or flip applied to a selection.
+  Affine? lastTransform;
+
+  /// Tools call this when a transforming gesture finishes.
+  void recordTransform(Affine t) {
+    if (!t.isIdentity) lastTransform = t;
+  }
+
+  void transformAgain() {
+    final t = lastTransform;
+    if (t == null || selection.isEmpty) return;
+    checkpoint();
+    transformSelection(t);
+  }
+
+  void duplicateAndTransformAgain() {
+    final t = lastTransform;
+    if (t == null || selection.isEmpty) return;
+    duplicateInPlace();
+    transformSelection(t);
+  }
+
+  // ---- Opacity ------------------------------------------------------------
+
+  /// Opacity for new shapes, and the selection's when one is selected.
+  double get opacity => selection.isEmpty ? defaultOpacity : selection.first.opacity;
+  double defaultOpacity = 1;
+
+  /// Sets the selection's opacity. Pass record: false while a slider is
+  /// moving (call [checkpoint] once when it starts).
+  void setOpacity(double value, {bool record = true}) {
+    defaultOpacity = value;
+    if (selection.isNotEmpty) {
+      if (record) checkpoint();
+      for (final e in selection) {
+        e.opacity = value;
+      }
+    }
+    notifyListeners();
+  }
+
   // ---- Rotate and flip --------------------------------------------------
 
   /// Rotates the selection about its center; positive is clockwise on screen.
@@ -281,7 +452,9 @@ class DrawingController extends ChangeNotifier {
     final b = selectionBounds;
     if (b == null) return;
     checkpoint();
-    transformSelection(make(b.center));
+    final t = make(b.center);
+    transformSelection(t);
+    recordTransform(t);
   }
 
   // ---- Images -----------------------------------------------------------
@@ -408,6 +581,34 @@ class DrawingController extends ChangeNotifier {
     checkpoint();
     drawing.deleteActiveLayer();
     selection.clear();
+    notifyListeners();
+  }
+
+  void duplicateActiveLayer() {
+    checkpoint();
+    drawing.duplicateActiveLayer();
+    selection.clear();
+    notifyListeners();
+  }
+
+  void moveLayer(int from, int to) {
+    if (from == to) return;
+    checkpoint();
+    drawing.moveLayer(from, to);
+    notifyListeners();
+  }
+
+  /// Pass record: false while a slider is moving.
+  void setLayerOpacity(double value, {bool record = true}) {
+    if (record) checkpoint();
+    drawing.activeLayer.opacity = value;
+    notifyListeners();
+  }
+
+  void updateLayer(int i, void Function(InkLayer layer) change) {
+    checkpoint();
+    change(drawing.layers[i]);
+    if (!drawing.layers[i].editable) selection.removeWhere((e) => drawing.layers[i].elements.contains(e));
     notifyListeners();
   }
 
