@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
+
 import 'package:flutter/widgets.dart';
 
 import '../model/drawing.dart';
@@ -48,7 +51,7 @@ class DrawingController extends ChangeNotifier {
   /// Records the current document state so the next change can be undone.
   /// Call before mutating the drawing.
   void checkpoint() {
-    _undoStack.add(drawing.encode());
+    _undoStack.add(drawing.encode(includeImages: false));
     if (_undoStack.length > _maxUndo) _undoStack.removeAt(0);
     _redoStack.clear();
   }
@@ -58,13 +61,13 @@ class DrawingController extends ChangeNotifier {
 
   void undo() {
     if (!canUndo) return;
-    _redoStack.add(drawing.encode());
+    _redoStack.add(drawing.encode(includeImages: false));
     _restore(_undoStack.removeLast());
   }
 
   void redo() {
     if (!canRedo) return;
-    _undoStack.add(drawing.encode());
+    _undoStack.add(drawing.encode(includeImages: false));
     _restore(_redoStack.removeLast());
   }
 
@@ -262,6 +265,30 @@ class DrawingController extends ChangeNotifier {
       return paint.copyWith(geometry: old.geometry);
     }
     return paint;
+  }
+
+  // ---- Images -----------------------------------------------------------
+
+  /// Places an image file centered on the page, scaled down (never up) to
+  /// fit, and selects it. Ported from -[WDDrawingController placeImage:].
+  /// Returns false if the file isn't a supported image.
+  bool placeImage(Uint8List bytes) {
+    final data = ImageData.register(bytes);
+    if (data == null || data.width == 0 || data.height == 0) return false;
+    finishActivePath();
+    checkpoint();
+    final scale = math.min(1.0, math.min(drawing.width / data.width, drawing.height / data.height));
+    final w = data.width * scale, h = data.height * scale;
+    final image = InkImage(
+      data,
+      placement: Affine.scale(scale, scale).then(Affine.translation((drawing.width - w) / 2, (drawing.height - h) / 2)),
+    );
+    drawing.activeLayer.elements.add(image);
+    selection
+      ..clear()
+      ..add(image);
+    notifyListeners();
+    return true;
   }
 
   // ---- Clipping masks ---------------------------------------------------

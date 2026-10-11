@@ -37,6 +37,12 @@ Done:
 - Gradients (linear and radial, any number of stops, pad/reflect/repeat):
   Solid / Linear / Radial fill picker, tap a stop to recolor it, add/remove/
   reverse stops, drag the start/end handles on the canvas with the select tool
+- Images (port of WDImage/WDImageData): Place image… (Shift+Ctrl/Cmd+P, or the
+  photo button; the photo library on phones). PNG, JPEG (EXIF rotation
+  honoured), GIF, WebP, BMP. Placed centered and scaled down to fit, stored
+  once per drawing however often they're used, and can be clipped by masks
+- Scale handles: drag a selection corner with the select tool to resize
+  (proportional; Shift for free, Alt from the center)
 - Clipping masks, as in Inkpad: select shapes, then Make clipping mask
   (Ctrl/Cmd+7); the topmost shape clips the rest. Release clipping mask
   (Shift+Ctrl/Cmd+7) puts them back
@@ -55,20 +61,21 @@ Done:
   (tag, class, id, descendant and child selectors), fill rules, units.
   Top-level groups become layers, as in Inkpad (Inkscape layers too).
   Gradients and clip paths import as real gradients and clipping masks;
+  embedded images are imported (with preserveAspectRatio);
   solid masks become clipping masks, soft masks (fades) are approximated with
-  even transparency; gradient outlines become a solid color; text and images
-  are skipped. Anything approximated is reported after import.
+  even transparency; gradient outlines become a solid color; linked (not
+  embedded) images and text are skipped. Anything approximated is reported after import.
   Tested against ~3,000 real-world SVGs. "Place SVG…" in the editor adds an
   SVG to the open drawing.
 - Responsive layout (side panels on desktop/tablet, bottom bar on phones)
 
 To port next (roughly in priority order):
-- Scale / rotate tools and a transform bounding box
+- Rotation handles (scaling is done)
 - Releasing compound paths; gradient outlines (strokes)
 - Boolean path operations (`WDPathfinder` / livarot). Note: livarot comes from
   Inkscape; check its license before porting it rather than reimplementing.
 - Freehand tool with curve fitting (`CurveFit`), scissors, eraser
-- Text and text-on-path (and SVG text import), images, shadows, arrowheads, dash patterns UI
+- Rotate tool; text and text-on-path (and SVG text import), shadows, arrowheads, dash patterns UI
 - Snapping (grid, points, edges), rulers, PDF/PNG export
 - Full color picker
 

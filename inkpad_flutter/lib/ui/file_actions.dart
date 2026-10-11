@@ -59,6 +59,18 @@ Future<List<ImportedFile>> pickDrawingFiles(BuildContext context, {bool inkpad =
   return result;
 }
 
+/// Lets the user pick image files (the photo library on phones).
+/// Returns (file name, bytes) pairs.
+Future<List<(String, Uint8List)>> pickImageFiles(BuildContext context) async {
+  try {
+    final files = await FilePicker.pickFiles(type: FileType.image);
+    return [for (final f in files) (f.name, await f.xFile.readAsBytes())];
+  } catch (e) {
+    if (context.mounted) showSnack(context, 'Could not open the image: $e');
+    return [];
+  }
+}
+
 /// Shows what an import left out, if anything.
 void reportImport(BuildContext context, List<ImportedFile> files) {
   if (files.isEmpty) return;

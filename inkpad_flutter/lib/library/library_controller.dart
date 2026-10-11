@@ -65,7 +65,7 @@ class LibraryController extends ChangeNotifier {
   }
 
   Future<DrawingInfo> duplicate(DrawingInfo source) => create(
-        drawing: InkDrawing.decode(source.drawing.encode()),
+        drawing: InkDrawing.decode(source.drawing.encode(includeImages: false)),
         name: '${source.name} copy',
       );
 

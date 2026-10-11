@@ -299,7 +299,7 @@ void main() {
       expect(geom.documentStart, const Offset(10, 20));
       expect(geom.documentEnd, const Offset(10, 100));
       expect(s[1].fill, const InkColor(0, 0, 1));
-      expect(r.warnings, containsAll(['Skipped 2 text elements', 'Skipped 1 image']));
+      expect(r.warnings, containsAll(['Skipped 2 text elements', 'Linked images (not embedded in the file) were skipped']));
       expect(r.warnings.any((w) => w.contains('radient')), isFalse);
     });
 

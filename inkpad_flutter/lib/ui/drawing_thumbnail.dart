@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../model/drawing.dart';
+import '../model/image.dart';
 
 /// Renders a whole drawing scaled to fit, on a white page.
 class DrawingThumbnail extends StatelessWidget {
@@ -19,7 +20,12 @@ class DrawingThumbnail extends StatelessWidget {
           color: Colors.white,
           boxShadow: [BoxShadow(color: Color(0x33000000), blurRadius: 4, offset: Offset(0, 1))],
         ),
-        child: ClipRect(child: CustomPaint(painter: _ThumbnailPainter(drawing))),
+        child: ClipRect(
+          child: ValueListenableBuilder(
+            valueListenable: ImageData.decodes,
+            builder: (context, _, _) => CustomPaint(painter: _ThumbnailPainter(drawing)),
+          ),
+        ),
       ),
     );
   }

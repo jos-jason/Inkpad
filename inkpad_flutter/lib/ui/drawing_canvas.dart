@@ -161,6 +161,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
   void initState() {
     super.initState();
     c.addListener(_onControllerChanged);
+    ImageData.decodes.addListener(_onControllerChanged);
   }
 
   @override
@@ -175,6 +176,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
   @override
   void dispose() {
     c.removeListener(_onControllerChanged);
+    ImageData.decodes.removeListener(_onControllerChanged);
     super.dispose();
   }
 
@@ -272,7 +274,9 @@ class _CanvasPainter extends CustomPainter {
       ..color = selectionColor;
 
     void outlineElement(InkElement e) {
-      if (e is InkStylable) {
+      if (e is InkImage) {
+        canvas.drawPath(Path()..addPolygon(e.corners, true), outline);
+      } else if (e is InkStylable) {
         canvas.drawPath(e.toFlutterPath(), outline);
       } else if (e is InkGroup) {
         e.elements.forEach(outlineElement);
@@ -288,6 +292,9 @@ class _CanvasPainter extends CustomPainter {
         (controller.selection.length > 1 || controller.selection.any((e) => e is InkGroup))) {
       canvas.drawRect(bounds, outline);
     }
+    if (bounds != null && controller.tool is SelectionTool && controller.activePath == null) {
+      _paintScaleHandles(canvas, bounds, px);
+    }
 
     final path = controller.activePath ?? controller.singleSelectedPath;
     if (path != null) _paintNodes(canvas, path, px);
@@ -295,6 +302,16 @@ class _CanvasPainter extends CustomPainter {
     final shape = controller.singleSelectedStylable;
     final fill = shape?.fill;
     if (shape != null && fill is InkGradient) _paintGradientHandles(canvas, fill, shape.bounds, px);
+  }
+
+  /// Corner handles for scaling the selection with the select tool.
+  void _paintScaleHandles(Canvas canvas, Rect bounds, double px) {
+    final r = 4 * px;
+    for (final h in SelectionTool.scaleHandles(bounds, scale)) {
+      final box = Rect.fromCenter(center: h, width: r * 2, height: r * 2);
+      canvas.drawRect(box, Paint()..color = selectionColor);
+      canvas.drawRect(box, Paint()..style = PaintingStyle.stroke..strokeWidth = px..color = Colors.white);
+    }
   }
 
   /// The gradient's start and end, draggable with the select tool.

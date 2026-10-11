@@ -32,7 +32,7 @@ class EditorPage extends StatefulWidget {
 class _EditorPageState extends State<EditorPage> {
   // The editor works on its own copy; the library only ever receives
   // snapshots, so its thumbnails always match what was saved.
-  late final controller = DrawingController(drawing: InkDrawing.decode(widget.info.drawing.encode()));
+  late final controller = DrawingController(drawing: InkDrawing.decode(widget.info.drawing.encode(includeImages: false)));
   final canvasKey = GlobalKey<DrawingCanvasState>();
 
   // Autosave: edits are written to the library shortly after they happen,
@@ -59,7 +59,7 @@ class _EditorPageState extends State<EditorPage> {
   @override
   void initState() {
     super.initState();
-    _lastSaved = controller.drawing.encode();
+    _lastSaved = controller.drawing.encode(includeImages: false);
     controller.addListener(_scheduleAutosave);
     _lifecycle = AppLifecycleListener(onHide: _saveNow, onPause: _saveNow);
   }
@@ -69,7 +69,7 @@ class _EditorPageState extends State<EditorPage> {
     // Defer the final save: it notifies the library page, which mustn't
     // rebuild while this page is being torn down.
     _autosave?.cancel();
-    final encoded = controller.drawing.encode();
+    final encoded = controller.drawing.encode(includeImages: false);
     if (encoded != _lastSaved) {
       Future.microtask(() => widget.library.saveEdits(widget.info, InkDrawing.decode(encoded)));
     }
@@ -85,10 +85,22 @@ class _EditorPageState extends State<EditorPage> {
 
   void _saveNow() {
     _autosave?.cancel();
-    final encoded = controller.drawing.encode();
+    final encoded = controller.drawing.encode(includeImages: false);
     if (encoded == _lastSaved) return;
     _lastSaved = encoded;
     widget.library.saveEdits(widget.info, InkDrawing.decode(encoded));
+  }
+
+  /// Ported from Inkpad's "Place Photo".
+  Future<void> _placeImage() async {
+    final files = await pickImageFiles(context);
+    final unsupported = [
+      for (final (name, bytes) in files)
+        if (!controller.placeImage(bytes)) name,
+    ];
+    if (unsupported.isNotEmpty && mounted) {
+      showSnack(context, '${unsupported.join(', ')}: not a supported image (PNG, JPEG, GIF, WebP or BMP)');
+    }
   }
 
   Future<void> _placeSvg() async {
@@ -143,6 +155,7 @@ class _EditorPageState extends State<EditorPage> {
         k(LogicalKeyboardKey.digit7, shift: true): c.releaseMask,
         k(LogicalKeyboardKey.keyS): _saveNow,
         k(LogicalKeyboardKey.keyE): () => exportSvg(context, c.drawing, widget.info.name),
+        k(LogicalKeyboardKey.keyP, shift: true): _placeImage,
       });
     }
     return map;
@@ -207,6 +220,11 @@ class _EditorPageState extends State<EditorPage> {
           onPressed: hasSel ? c.deleteSelection : null,
         ),
         IconButton(
+          tooltip: 'Place image',
+          icon: const Icon(Icons.add_photo_alternate_outlined),
+          onPressed: _placeImage,
+        ),
+        IconButton(
           tooltip: 'Fit to screen',
           icon: const Icon(Icons.fit_screen_outlined),
           onPressed: () => canvas?.fitToScreen(),
@@ -226,6 +244,7 @@ class _EditorPageState extends State<EditorPage> {
           onSelected: (action) => action(),
           itemBuilder: (context) => [
             PopupMenuItem(value: _rename, child: const Text('Rename…')),
+            PopupMenuItem(value: _placeImage, child: const Text('Place image…')),
             PopupMenuItem(value: _placeSvg, child: const Text('Place SVG…')),
             PopupMenuItem(
                 value: () => exportSvg(context, c.drawing, widget.info.name), child: const Text('Export SVG…')),

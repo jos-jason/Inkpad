@@ -3,7 +3,10 @@ import 'dart:ui';
 
 import 'bezier_node.dart';
 import 'geometry.dart';
+import 'image.dart';
 import 'style.dart';
+
+export 'image.dart';
 
 /// Base class for everything that lives on a layer. Ported from WDElement.
 abstract class InkElement {
@@ -32,12 +35,18 @@ abstract class InkElement {
 
   InkElement clone() => InkElement.fromJson(toJson());
 
+  /// This element, then everything inside it (group members, masked elements).
+  Iterable<InkElement> get selfAndDescendants sync* {
+    yield this;
+  }
+
   Map<String, dynamic> toJson();
 
   static InkElement fromJson(Map<String, dynamic> j) => switch (j['type']) {
         'path' => InkPath.fromJson(j),
         'compound' => InkCompoundPath.fromJson(j),
         'group' => InkGroup.fromJson(j),
+        'image' => InkImage.fromJson(j),
         _ => throw FormatException('Unknown element type ${j['type']}'),
       };
 
@@ -48,6 +57,16 @@ abstract class InkElement {
 class SvgWriter {
   final List<String> definitions = [];
   int _gradients = 0, _clips = 0;
+  final Map<String, String> _images = {};
+
+  /// Adds an image's data once, however often it's used (as Inkpad did);
+  /// returns its id.
+  String image(ImageData data) => _images.putIfAbsent(data.id, () {
+        final id = 'image${_images.length + 1}';
+        definitions.add('<image id="$id" width="${data.width}" height="${data.height}" '
+            'preserveAspectRatio="none" xlink:href="${data.dataUri}"/>');
+        return id;
+      });
 
   /// Adds a gradient definition for a shape with [bounds]; returns its id.
   String gradient(InkGradient g, Rect bounds) {
@@ -82,6 +101,14 @@ abstract class InkStylable extends InkElement {
       : maskedElements = maskedElements ?? [];
 
   bool get isMasking => maskedElements.isNotEmpty;
+
+  @override
+  Iterable<InkElement> get selfAndDescendants sync* {
+    yield this;
+    for (final e in maskedElements) {
+      yield* e.selfAndDescendants;
+    }
+  }
 
   /// Applies [t] to the outline only.
   void transformGeometry(Affine t);
@@ -543,6 +570,14 @@ class InkGroup extends InkElement {
   List<InkElement> elements;
 
   InkGroup(this.elements, {super.opacity});
+
+  @override
+  Iterable<InkElement> get selfAndDescendants sync* {
+    yield this;
+    for (final e in elements) {
+      yield* e.selfAndDescendants;
+    }
+  }
 
   @override
   Rect get bounds => elements.map((e) => e.bounds).reduce((a, b) => a.expandToInclude(b));

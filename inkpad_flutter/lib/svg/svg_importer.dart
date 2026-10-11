@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:xml/xml.dart';
@@ -40,7 +42,8 @@ class SvgImportException implements Exception {
 /// Gradient fills (linear and radial) and clip paths are imported as such;
 /// masks made of solid white shapes become clipping masks.
 /// Approximated: gradient outlines (become a solid color), soft masks
-/// (ignored), patterns (left out). Skipped: text, images.
+/// (even transparency), patterns (left out). Embedded bitmap images are
+/// imported; linked images and text are skipped.
 SvgImportResult importSvg(String source) => _SvgImporter(source).run();
 
 /// Properties that children inherit from their parents.
@@ -398,7 +401,7 @@ class _SvgImporter {
       case 'text':
         _skip('text element');
       case 'image':
-        _skip('image');
+        result = _image(e, context);
       case 'foreignObject':
         _skip('embedded HTML element');
     }
@@ -542,6 +545,65 @@ class _SvgImporter {
   InkStylable _wrap(InkStylable mask, InkElement content) {
     mask.maskedElements = content is InkGroup && content.opacity == 1 ? content.elements : [content];
     return mask;
+  }
+
+  static final _dataUri = RegExp(r'^data:([^;,]*)((?:;[^;,]*)*),(.*)$', dotAll: true);
+
+  /// An embedded `<image>`, positioned by x/y/width/height and
+  /// preserveAspectRatio. "slice" crops with a clipping mask.
+  InkElement? _image(XmlElement e, _Context context) {
+    final href = (_attrLocal(e, 'href') ?? '').trim();
+    final m = _dataUri.firstMatch(href);
+    if (m == null) {
+      _notes.add('Linked images (not embedded in the file) were skipped');
+      return null;
+    }
+    if (m.group(1) == 'image/svg+xml') {
+      _skip('embedded SVG image');
+      return null;
+    }
+    final Uint8List bytes;
+    try {
+      final payload = m.group(3)!;
+      bytes = m.group(2)!.contains(';base64')
+          ? base64Decode(payload.replaceAll(RegExp(r'\s'), ''))
+          : Uint8List.fromList(utf8.encode(Uri.decodeComponent(payload)));
+    } on FormatException {
+      _skip('unreadable image');
+      return null;
+    }
+    final data = ImageData.register(bytes);
+    if (data == null || data.width == 0 || data.height == 0) {
+      _skip('image in an unsupported format');
+      return null;
+    }
+
+    final iw = data.width.toDouble(), ih = data.height.toDouble();
+    final x = _length(e, 'x', percentOf: _viewWidth), y = _length(e, 'y', percentOf: _viewHeight);
+    final w = parseLength(e.getAttribute('width'), percentOf: _viewWidth) ?? iw;
+    final h = parseLength(e.getAttribute('height'), percentOf: _viewHeight) ?? ih;
+    if (w <= 0 || h <= 0) return null;
+
+    final aspect = (e.getAttribute('preserveAspectRatio') ?? 'xMidYMid meet').trim().split(RegExp(r'\s+'));
+    final align = aspect.first;
+    final Affine local;
+    var slice = false;
+    if (align == 'none') {
+      local = Affine.scale(w / iw, h / ih).then(Affine.translation(x, y));
+    } else {
+      slice = aspect.contains('slice');
+      final s = slice ? math.max(w / iw, h / ih) : math.min(w / iw, h / ih);
+      double offset(String axis, double room) => align.contains('${axis}Min')
+          ? 0
+          : align.contains('${axis}Max')
+              ? room
+              : room / 2;
+      local = Affine.scale(s, s).then(Affine.translation(x + offset('x', w - iw * s), y + offset('Y', h - ih * s)));
+    }
+    final image = InkImage(data, placement: local.then(context.ctm));
+    if (!slice) return image;
+    final crop = InkPath.rect(Rect.fromLTWH(x, y, w, h))..transform(context.ctm);
+    return crop..maskedElements = [image];
   }
 
   InkElement? _group(XmlElement e, _Context context) {
