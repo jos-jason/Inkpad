@@ -8,6 +8,7 @@ import '../library/drawing_store.dart';
 import '../library/library_controller.dart';
 import '../model/drawing.dart';
 import '../model/element.dart';
+import '../geometry/pathfinder.dart';
 import '../model/style.dart';
 import '../tools/tool.dart';
 import 'chrome/chrome.dart';
@@ -51,6 +52,7 @@ class _EditorPageState extends State<EditorPage> {
   // ---- Tools ---------------------------------------------------------------
 
   late final _select = controller.tool;
+  final _direct = DirectSelectTool();
   final _pen = PenTool();
   final _anchor = AnchorTool();
   final _rect = ShapeTool(ShapeKind.rectangle);
@@ -73,9 +75,9 @@ class _EditorPageState extends State<EditorPage> {
 
   late final List<Object> _palette = [
     PaletteTool('Select', const ToolIcon(ToolIcon.arrow), _select, shortcut: 'V'),
-    const PaletteTool('Direct Select', ToolIcon(ToolIcon.directSelect), null),
+    PaletteTool('Direct Select', const ToolIcon(ToolIcon.directSelect), _direct, shortcut: 'A'),
     PaletteTool('Pen', const ToolIcon(ToolIcon.pen), _pen, shortcut: 'P'),
-    PaletteTool('Add/Delete Point', const ToolIcon(ToolIcon.addAnchor), _anchor, shortcut: 'A'),
+    PaletteTool('Add/Delete Point', const ToolIcon(ToolIcon.addAnchor), _anchor, shortcut: 'N'),
     const PaletteTool('Scissors', Icon(Icons.content_cut), null),
     PaletteGroup(const [
       PaletteTool('Freehand', ToolIcon(ToolIcon.blob), null),
@@ -177,7 +179,7 @@ class _EditorPageState extends State<EditorPage> {
       const SingleActivator(LogicalKeyboardKey.digit1): () => canvas?.actualSize(),
     };
     final shortcutTools = <String, Tool>{
-      'V': _select, 'P': _pen, 'A': _anchor, 'R': _rect, 'E': _oval, 'S': _star, 'G': _polygon, 'L': _line,
+      'V': _select, 'A': _direct, 'P': _pen, 'N': _anchor, 'R': _rect, 'E': _oval, 'S': _star, 'G': _polygon, 'L': _line,
       'K': _scale, 'O': _rotate, 'H': _hand,
     };
     for (final MapEntry(key: letter, value: tool) in shortcutTools.entries) {
@@ -275,20 +277,21 @@ class _EditorPageState extends State<EditorPage> {
   List<MenuEntry> _pathMenu() {
     final c = controller;
     const soon = MenuAction.new;
+    MenuAction shapes(String label, BooleanOp op) => MenuAction(label, c.canCombineShapes ? () => _combine(op) : null);
     return [
-      soon('Add Anchor Points', null, comingSoon: true),
-      soon('Delete Anchor Points', null, comingSoon: true),
-      soon('Join Paths', null, comingSoon: true),
-      soon('Outline Stroke', null, comingSoon: true),
+      MenuAction('Add Anchor Points', c.canAddAnchors ? c.addAnchorPoints : null),
+      MenuAction('Delete Anchor Points', c.canDeleteAnchors ? c.deleteSelectedAnchors : null),
+      MenuAction('Join Paths', c.canJoinPaths ? c.joinPaths : null),
+      MenuAction('Outline Stroke', c.canOutlineStroke ? c.outlineStroke : null),
       const MenuDivider(),
-      soon('Combine Paths', null, comingSoon: true),
-      soon('Separate Paths', null, comingSoon: true),
+      MenuAction('Combine Paths', c.canCombinePaths ? c.combinePaths : null),
+      MenuAction('Separate Paths', c.canSeparatePaths ? c.separatePaths : null),
       MenuAction('Reverse Path Direction', c.canReversePaths ? c.reversePaths : null),
       const MenuDivider(),
-      soon('Unite', null, comingSoon: true),
-      soon('Intersect', null, comingSoon: true),
-      soon('Subtract Front', null, comingSoon: true),
-      soon('Exclude', null, comingSoon: true),
+      shapes('Unite', BooleanOp.unite),
+      shapes('Intersect', BooleanOp.intersect),
+      shapes('Subtract Front', BooleanOp.subtractFront),
+      shapes('Exclude', BooleanOp.exclude),
       const MenuDivider(),
       MenuAction('Mask', c.canMakeMask ? c.makeMask : null),
       MenuAction('Unmask', c.canReleaseMask ? c.releaseMask : null),
@@ -296,6 +299,14 @@ class _EditorPageState extends State<EditorPage> {
       soon('Create Outlines from Text', null, comingSoon: true),
       soon('Place Text on Path', null, comingSoon: true),
     ];
+  }
+
+  void _combine(BooleanOp op) {
+    final before = controller.selection.length;
+    controller.combineShapes(op);
+    if (before > 1 && controller.selection.isEmpty && mounted) {
+      showSnack(context, 'Nothing was left after that operation');
+    }
   }
 
   void _menu(BuildContext anchor, List<MenuEntry> Function() entries, {PopoverSide side = PopoverSide.above}) =>
@@ -528,9 +539,10 @@ class _EditorPageState extends State<EditorPage> {
           ),
         ),
         if (!compact)
-          const Tooltip(
-            message: 'Swatches (coming soon)',
-            child: Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Opacity(opacity: 0.35, child: _SwatchesIcon())),
+          const IconButton(
+            tooltip: 'AI edit (coming soon)',
+            onPressed: null,
+            icon: Icon(Icons.auto_awesome_outlined),
           ),
         Builder(
           builder: (b) => compact
@@ -685,32 +697,6 @@ class _ColorWheel extends StatelessWidget {
             width: 14,
             height: 14,
             decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [Colors.white, Colors.white.withValues(alpha: 0)])),
-          ),
-        ),
-      );
-}
-
-/// The multicolored square (bottom-right).
-class _SwatchesIcon extends StatelessWidget {
-  const _SwatchesIcon();
-
-  @override
-  Widget build(BuildContext context) => ClipRRect(
-        borderRadius: BorderRadius.circular(17),
-        child: SizedBox.square(
-          dimension: 34,
-          child: GridView.count(
-            crossAxisCount: 4,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              for (final c in const [
-                Color(0xFFE53935), Color(0xFFFB8C00), Color(0xFF43A047), Color(0xFF1E88E5),
-                Color(0xFF8E24AA), Color(0xFFFDD835), Color(0xFF00ACC1), Color(0xFF6D4C41),
-                Color(0xFF3949AB), Color(0xFFD81B60), Color(0xFF7CB342), Color(0xFF546E7A),
-                Color(0xFFF4511E), Color(0xFF5E35B1), Color(0xFF00897B), Color(0xFFC0CA33),
-              ])
-                ColoredBox(color: c),
-            ],
           ),
         ),
       );

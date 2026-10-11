@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 
+import '../geometry/pathfinder.dart';
+import '../model/bezier_node.dart';
 import '../model/drawing.dart';
 import '../model/element.dart';
 import '../model/geometry.dart';
@@ -42,6 +44,7 @@ class DrawingController extends ChangeNotifier {
 
   set tool(Tool t) {
     finishActivePath();
+    if (t is! DirectSelectTool) selectedNodes.clear();
     _tool = t;
     notifyListeners();
   }
@@ -77,6 +80,7 @@ class DrawingController extends ChangeNotifier {
   void _restore(String snapshot) {
     drawing = InkDrawing.decode(snapshot);
     selection.clear();
+    selectedNodes.clear();
     activePath = null;
     notifyListeners();
   }
@@ -122,6 +126,7 @@ class DrawingController extends ChangeNotifier {
 
   void select(InkElement e, {bool extend = false}) {
     if (!extend) selection.clear();
+    selectedNodes.clear();
     selection.add(e);
     // Like Inkpad's property manager, the inspector picks up the style of
     // what you select, so new shapes continue in that style.
@@ -178,6 +183,11 @@ class DrawingController extends ChangeNotifier {
   }
 
   void deleteSelection() {
+    // With points selected (direct select), Delete removes the points.
+    if (selectedNodes.isNotEmpty) {
+      deleteSelectedAnchors();
+      return;
+    }
     if (selection.isEmpty) return;
     checkpoint();
     for (final l in drawing.layers) {
@@ -337,6 +347,299 @@ class DrawingController extends ChangeNotifier {
       return paint.copyWith(geometry: old.geometry);
     }
     return paint;
+  }
+
+  // ---- Point selection (direct select) -----------------------------------
+
+  /// Selected anchor points, by path and node index. Any change to a path's
+  /// structure clears this, since indices would no longer match.
+  final Map<InkPath, Set<int>> selectedNodes = {};
+
+  /// Every editable path (inside groups, compound paths and masks too),
+  /// mapped to the top-level element that contains it. Bottom first.
+  Map<InkPath, InkElement> pathOwners() {
+    final owners = <InkPath, InkElement>{};
+    void walk(InkElement e, InkElement owner) {
+      switch (e) {
+        case InkCompoundPath():
+          for (final p in e.subpaths) {
+            owners[p] = owner;
+          }
+        case InkPath():
+          owners[e] = owner;
+        case InkGroup():
+          for (final c in e.elements) {
+            walk(c, owner);
+          }
+        default:
+          break;
+      }
+      if (e is InkStylable) {
+        for (final m in e.maskedElements) {
+          walk(m, owner);
+        }
+      }
+    }
+
+    for (final l in drawing.layers) {
+      if (!l.editable) continue;
+      for (final e in l.elements) {
+        walk(e, e);
+      }
+    }
+    return owners;
+  }
+
+  /// Replaces the point selection; the containing elements become the
+  /// selection, so the style panels apply to them.
+  void setSelectedNodes(Map<InkPath, Set<int>> nodes) {
+    selectedNodes
+      ..clear()
+      ..addAll({for (final e in nodes.entries) if (e.value.isNotEmpty) e.key: {...e.value}});
+    final owners = pathOwners();
+    selection
+      ..clear()
+      ..addAll([for (final p in selectedNodes.keys) if (owners[p] != null) owners[p]!]);
+    notifyListeners();
+  }
+
+  bool get canDeleteAnchors => selectedNodes.isNotEmpty;
+
+  /// Ported from -[WDPath deleteAnchors]. A path left with fewer than two
+  /// points is removed altogether.
+  void deleteSelectedAnchors() {
+    if (selectedNodes.isEmpty) return;
+    checkpoint();
+    for (final MapEntry(key: path, value: indices) in selectedNodes.entries) {
+      if (path.nodes.length - indices.length >= 2) {
+        for (final i in indices.toList()..sort((a, b) => b - a)) {
+          path.nodes.removeAt(i);
+        }
+      } else {
+        _removePath(path);
+      }
+    }
+    selectedNodes.clear();
+    notifyListeners();
+  }
+
+  /// Removes [path] from wherever it lives (layer, group, compound path, mask).
+  void _removePath(InkPath path) {
+    bool removeFrom(List<InkElement> list) {
+      if (list.remove(path)) return true;
+      for (final e in list) {
+        if (e is InkCompoundPath && e.subpaths.remove(path)) {
+          if (e.subpaths.isEmpty) list.remove(e);
+          return true;
+        }
+        if (e is InkGroup && removeFrom(e.elements)) return true;
+        if (e is InkStylable && removeFrom(e.maskedElements)) return true;
+      }
+      return false;
+    }
+
+    for (final l in drawing.layers) {
+      if (removeFrom(l.elements)) break;
+    }
+    selection.remove(path);
+  }
+
+  // ---- Path menu (ported from Inkpad's Path menu) ---------------------------
+
+  /// Selected paths, including the subpaths of selected compound paths.
+  List<InkPath> get _selectedPaths => [
+        for (final e in orderedSelection)
+          if (e is InkPath) e else if (e is InkCompoundPath) ...e.subpaths,
+      ];
+
+  bool get canAddAnchors => _selectedPaths.isNotEmpty;
+
+  /// Ported from -[WDDrawingController addAnchors:].
+  void addAnchorPoints() {
+    if (!canAddAnchors) return;
+    finishActivePath();
+    checkpoint();
+    _selectedPaths.forEach(addAnchorsToPath);
+    selectedNodes.clear();
+    notifyListeners();
+  }
+
+  /// Ported from -[WDDrawingController canJoinPaths]: two open paths.
+  bool get canJoinPaths =>
+      selection.length == 2 && selection.every((e) => e is InkPath && !e.closed && e.nodes.length > 1 && !e.isMasking);
+
+  /// Joins two open paths at their nearest ends: ends that touch are merged,
+  /// otherwise a straight segment connects them. (Inkpad instead moved the
+  /// second path to meet the first.) The result keeps the top path's style.
+  void joinPaths() {
+    if (!canJoinPaths) return;
+    checkpoint();
+    final ordered = orderedSelection;
+    final top = ordered.last as InkPath, other = ordered.first as InkPath;
+    // Choose the closest pair of ends; orient so top ends where other starts.
+    final options = [
+      (false, false), (false, true), (true, false), (true, true), // reverse top?, reverse other?
+    ];
+    (bool, bool) best = options.first;
+    var bestD = double.infinity;
+    for (final o in options) {
+      final end = o.$1 ? top.nodes.first.anchorPoint : top.nodes.last.anchorPoint;
+      final start = o.$2 ? other.nodes.last.anchorPoint : other.nodes.first.anchorPoint;
+      final d = (end - start).distance;
+      if (d < bestD) {
+        bestD = d;
+        best = o;
+      }
+    }
+    if (best.$1) top.reverse();
+    if (best.$2) other.reverse();
+    final incoming = List.of(other.nodes);
+    if (bestD < 0.5) {
+      // Merge the touching ends into one point.
+      final last = top.nodes.removeLast(), first = incoming.removeAt(0);
+      top.nodes.add(BezierNode(last.inPoint, last.anchorPoint, first.outPoint + (last.anchorPoint - first.anchorPoint)));
+    }
+    top.nodes.addAll(incoming);
+    // Closed up: ends meet.
+    if (top.nodes.length > 2 && (top.nodes.first.anchorPoint - top.nodes.last.anchorPoint).distance < 0.5) {
+      final last = top.nodes.removeLast();
+      top.nodes[0] = BezierNode(last.inPoint, top.nodes[0].anchorPoint, top.nodes[0].outPoint);
+      top.closed = true;
+    }
+    for (final l in drawing.layers) {
+      l.elements.remove(other);
+    }
+    selection
+      ..clear()
+      ..add(top);
+    selectedNodes.clear();
+    notifyListeners();
+  }
+
+  bool get canOutlineStroke => selection.any((e) => e is InkStylable && !e.isMasking && (e.stroke?.willRender ?? false));
+
+  /// Ported from -[WDDrawingController outlineStroke:]: the stroke becomes
+  /// a filled shape in the stroke's color. A shape that also has a fill
+  /// keeps it (minus the stroke) beneath the new outline.
+  void outlineStroke() {
+    if (!canOutlineStroke) return;
+    finishActivePath();
+    checkpoint();
+    final results = <InkElement>[];
+    for (final e in orderedSelection) {
+      if (e is! InkStylable || e.isMasking || !(e.stroke?.willRender ?? false)) {
+        results.add(e);
+        continue;
+      }
+      final outline = Pathfinder.outlineStroke(e);
+      final layer = layerOf(e)!;
+      final index = layer.elements.indexOf(e);
+      if (outline == null) continue;
+      outline
+        ..fill = e.stroke!.color
+        ..opacity = e.opacity;
+      if (e.fill != null) {
+        e.stroke = null;
+        layer.elements.insert(index + 1, outline);
+      } else {
+        layer.elements[index] = outline;
+      }
+      results.add(outline);
+    }
+    selection
+      ..clear()
+      ..addAll(results);
+    selectedNodes.clear();
+    notifyListeners();
+  }
+
+  /// Ported from -[WDDrawingController canMakeCompoundPath].
+  bool get canCombinePaths =>
+      selection.length > 1 && selection.every((e) => (e is InkPath || e is InkCompoundPath) && !(e as InkStylable).isMasking);
+
+  /// Ported from -[WDDrawingController makeCompoundPath:]: one compound
+  /// path styled like the topmost shape, where the topmost was.
+  void combinePaths() {
+    if (!canCombinePaths) return;
+    checkpoint();
+    final ordered = orderedSelection.cast<InkStylable>();
+    final top = ordered.last;
+    final compound = InkCompoundPath(
+      [for (final e in ordered) ...(e is InkCompoundPath ? e.subpaths : [e as InkPath])]
+          .map((p) => InkPath(nodes: List.of(p.nodes), closed: p.closed))
+          .toList(),
+      fill: top.fill,
+      stroke: top.stroke,
+      fillRule: top.fillRule,
+      opacity: top.opacity,
+    );
+    _replace(ordered, top, compound);
+  }
+
+  bool get canSeparatePaths => selection.any((e) => e is InkCompoundPath && !e.isMasking);
+
+  /// Ported from -[WDDrawingController releaseCompoundPath:]: each subpath
+  /// becomes a path of its own with the compound path's style.
+  void separatePaths() {
+    if (!canSeparatePaths) return;
+    checkpoint();
+    final released = <InkElement>[];
+    for (final e in orderedSelection) {
+      if (e is! InkCompoundPath || e.isMasking) {
+        released.add(e);
+        continue;
+      }
+      final layer = layerOf(e)!;
+      final parts = [
+        for (final p in e.subpaths)
+          InkPath(nodes: p.nodes, closed: p.closed, fill: e.fill, stroke: e.stroke, fillRule: e.fillRule, opacity: e.opacity),
+      ];
+      final i = layer.elements.indexOf(e);
+      layer.elements
+        ..removeAt(i)
+        ..insertAll(i, parts);
+      released.addAll(parts);
+    }
+    selection
+      ..clear()
+      ..addAll(released);
+    selectedNodes.clear();
+    notifyListeners();
+  }
+
+  bool get canCombineShapes =>
+      selection.length > 1 && selection.every((e) => (e is InkPath || e is InkCompoundPath) && !(e as InkStylable).isMasking);
+
+  /// Unite / intersect / subtract front / exclude. Ported from
+  /// -[WDDrawingController booleanWithOperation:] and subtractPaths:.
+  /// Subtract keeps the bottom shape's style; the others take the top's.
+  void combineShapes(BooleanOp op) {
+    if (!canCombineShapes) return;
+    finishActivePath();
+    final ordered = orderedSelection.cast<InkStylable>();
+    final result = Pathfinder.combine(ordered, op);
+    checkpoint();
+    final styleFrom = op == BooleanOp.subtractFront ? ordered.first : ordered.last;
+    if (result != null) {
+      result
+        ..fill = styleFrom.fill is InkGradient ? (styleFrom.fill as InkGradient).copyWith(clearGeometry: true) : styleFrom.fill
+        ..stroke = styleFrom.stroke
+        ..opacity = styleFrom.opacity;
+    }
+    _replace(ordered, styleFrom, result);
+  }
+
+  /// Replaces [olds] with [result] at [anchor]'s position, selecting it.
+  void _replace(List<InkElement> olds, InkElement anchor, InkElement? result) {
+    final layer = layerOf(anchor)!;
+    if (result != null) layer.elements.insert(layer.elements.indexOf(anchor) + 1, result);
+    for (final l in drawing.layers) {
+      l.elements.removeWhere(olds.contains);
+    }
+    selection.clear();
+    if (result != null) selection.add(result);
+    selectedNodes.clear();
+    notifyListeners();
   }
 
   // ---- Paths -------------------------------------------------------------

@@ -51,6 +51,16 @@ Done:
   once per drawing however often they're used, and can be clipped by masks
 - Scale handles: drag a selection corner with the select tool to resize
   (proportional; Shift for free, Alt from the center)
+- Direct Select tool (A): select points on any path (including inside
+  groups, compound paths and masks) by clicking, Shift-clicking or dragging a
+  marquee; drag to move them, drag a selected point's handles, double-click
+  to add/remove handles, Delete to remove points
+- Path menu (ported from Inkpad's): add / delete anchor points, join paths,
+  outline stroke (keeps any fill beneath), combine / separate paths, reverse
+  direction, unite / intersect / subtract front / exclude, mask / unmask.
+  Shape operations (`lib/geometry/`) flatten curves, combine the polygons with
+  Clipper2, then refit beziers — as Inkpad's livarot engine did — keeping
+  corners and crossing points sharp and straight edges straight
 - Edit menu: select all / in layer, deselect, cut, copy, paste, duplicate,
   duplicate in place, transform again, duplicate & transform again, delete
 - Arrange menu: forward/backward one step, front/back, flip, rotate 90°,
@@ -93,11 +103,11 @@ Done:
 - Responsive layout (side panels on desktop/tablet, bottom bar on phones)
 
 To port next (roughly in priority order; greyed out in the UI):
-- Direct-select tool with point selection (then Delete Anchor Points)
-- Path menu: add anchor points, join, outline stroke, combine/separate,
-  unite/intersect/subtract front/exclude
-- Shadows; swatch library; scissors, eraser, freehand & brush, spiral,
-  eyedropper; arrowheads
+- Shadow & opacity panel (shadow color, angle, offset, blur; blend mode)
+- Color menu (color wheel): blend back to front / horizontally / vertically,
+  color balance, hue & saturation, desaturate, invert
+- AI edit (placeholder button for now)
+- Scissors, eraser, freehand & brush, spiral, eyedropper; arrowheads; text
 - Releasing compound paths; gradient outlines (strokes)
 - Boolean path operations (`WDPathfinder` / livarot). Note: livarot comes from
   Inkscape; check its license before porting it rather than reimplementing.
@@ -108,7 +118,7 @@ To port next (roughly in priority order; greyed out in the UI):
 
 ## Keyboard shortcuts
 
-V select · O rotate · P pen · A add/delete point · R rect · E oval · S star · G polygon · L line · H hand ·
+V select · A direct select · O rotate · K scale · P pen · N add/delete point · R rect · E oval · S star · G polygon · L line · H hand ·
 Ctrl/Cmd+Z undo · Shift+Ctrl/Cmd+Z redo · Ctrl/Cmd+D duplicate ·
 Ctrl/Cmd+G group · Shift+Ctrl/Cmd+G ungroup · Ctrl/Cmd+S save now ·
 Ctrl/Cmd+E export SVG · Ctrl/Cmd+7 make clipping mask ·
@@ -117,6 +127,11 @@ Shift+Ctrl/Cmd+7 release clipping mask · Delete remove · Esc/Enter finish path
 
 Modifiers while dragging: Shift constrains, Alt/Option draws shapes from the
 center or breaks handle symmetry.
+
+## Third-party code
+
+- [Clipper2](https://pub.dev/packages/clipper2) (polygon boolean operations
+  and offsetting) — Boost Software License 1.0
 
 ## License
 

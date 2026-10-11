@@ -346,8 +346,16 @@ class _CanvasPainter extends CustomPainter {
       _paintScaleHandles(canvas, bounds, px);
     }
 
-    final path = controller.activePath ?? controller.singleSelectedPath;
-    if (path != null) _paintNodes(canvas, path, px);
+    if (controller.tool is DirectSelectTool) {
+      // Point editing: every path with selected points, handles on selected points only.
+      for (final MapEntry(key: p, value: selected) in controller.selectedNodes.entries) {
+        canvas.drawPath(p.toFlutterPath(), outline);
+        _paintNodes(canvas, p, px, selected: selected);
+      }
+    } else {
+      final path = controller.activePath ?? controller.singleSelectedPath;
+      if (path != null) _paintNodes(canvas, path, px);
+    }
 
     final shape = controller.singleSelectedStylable;
     final fill = shape?.fill;
@@ -383,7 +391,8 @@ class _CanvasPainter extends CustomPainter {
     }
   }
 
-  void _paintNodes(Canvas canvas, InkPath path, double px) {
+  /// [selected]: only these points are filled and show their handles.
+  void _paintNodes(Canvas canvas, InkPath path, double px, {Set<int>? selected}) {
     final line = Paint()
       ..strokeWidth = px
       ..color = selectionColor;
@@ -394,7 +403,8 @@ class _CanvasPainter extends CustomPainter {
       ..color = selectionColor;
     final r = 3.5 * px;
 
-    for (final n in path.nodes) {
+    for (final (i, n) in path.nodes.indexed) {
+      if (selected != null && !selected.contains(i)) continue;
       for (final h in [if (n.hasInPoint) n.inPoint, if (n.hasOutPoint) n.outPoint]) {
         canvas.drawLine(n.anchorPoint, h, line);
         canvas.drawCircle(h, r * 0.8, fill);
@@ -404,7 +414,8 @@ class _CanvasPainter extends CustomPainter {
     for (final (i, n) in path.nodes.indexed) {
       final rect = Rect.fromCenter(center: n.anchorPoint, width: r * 2, height: r * 2);
       final isEnd = !path.closed && i == path.nodes.length - 1 && identical(path, controller.activePath);
-      canvas.drawRect(rect, isEnd ? (Paint()..color = selectionColor) : fill);
+      final filled = isEnd || (selected?.contains(i) ?? false);
+      canvas.drawRect(rect, filled ? (Paint()..color = selectionColor) : fill);
       canvas.drawRect(rect, stroke);
     }
   }
