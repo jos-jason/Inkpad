@@ -2,9 +2,15 @@ import 'package:flutter/material.dart';
 
 import 'library/drawing_store.dart';
 import 'library/library_controller.dart';
+import 'text/font_library.dart';
 import 'ui/library_page.dart';
 
-void main() => runApp(InkpadApp(library: LibraryController(DrawingStore())));
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Bundled fonts load first; installed fonts are found in the background.
+  await FontLibrary.instance.init();
+  runApp(InkpadApp(library: LibraryController(DrawingStore())));
+}
 
 class InkpadApp extends StatelessWidget {
   final LibraryController library;

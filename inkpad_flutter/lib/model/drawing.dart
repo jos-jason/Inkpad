@@ -157,7 +157,8 @@ class InkDrawing {
     final sb = StringBuffer()
       ..writeln('<?xml version="1.0" encoding="UTF-8"?>')
       ..writeln('<!-- Created with Inkpad (Flutter) -->')
-      ..writeln('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" '
+      ..writeln('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
+          'xmlns:inkpad="http://inkpad.org/ns" version="1.1" '
           'width="${w}pt" height="${h}pt" viewBox="0 0 $w $h">');
     final writer = SvgWriter();
     final body = [for (final l in layers) l.toSvg(writer)];

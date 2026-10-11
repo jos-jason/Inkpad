@@ -9,6 +9,7 @@ import '../model/drawing.dart';
 import '../model/element.dart';
 import '../model/geometry.dart';
 import '../model/style.dart';
+import '../text/font_library.dart';
 import '../tools/tool.dart';
 
 /// Ported from WDAlignment.
@@ -44,6 +45,7 @@ class DrawingController extends ChangeNotifier {
 
   set tool(Tool t) {
     finishActivePath();
+    endEditing();
     if (t is! DirectSelectTool) selectedNodes.clear();
     _tool = t;
     notifyListeners();
@@ -78,6 +80,7 @@ class DrawingController extends ChangeNotifier {
   }
 
   void _restore(String snapshot) {
+    editingText = null;
     drawing = InkDrawing.decode(snapshot);
     selection.clear();
     selectedNodes.clear();
@@ -125,12 +128,14 @@ class DrawingController extends ChangeNotifier {
   // ---- Selection --------------------------------------------------------
 
   void select(InkElement e, {bool extend = false}) {
+    if (!identical(e, editingText)) endEditing();
     if (!extend) selection.clear();
     selectedNodes.clear();
     selection.add(e);
     // Like Inkpad's property manager, the inspector picks up the style of
     // what you select, so new shapes continue in that style.
     if (!extend && e is InkStylable) {
+      adoptTextStyle(e);
       final f = e.fill;
       fillPaint = f is InkGradient ? f.copyWith(clearGeometry: true) : f;
       strokeStyle = e.stroke;
@@ -139,6 +144,7 @@ class DrawingController extends ChangeNotifier {
   }
 
   void selectNone() {
+    endEditing();
     if (selection.isEmpty) return;
     selection.clear();
     notifyListeners();
@@ -600,6 +606,194 @@ class DrawingController extends ChangeNotifier {
       }
       targets.forEach(apply);
     }
+    notifyListeners();
+  }
+
+  // ---- Text (ported from WDDrawingController's text handling) -----------
+
+  String fontFamily = FontLibrary.instance.defaultFamily;
+  String fontStyle = 'Regular';
+  double fontSize = FontLibrary.defaultSize;
+  TextAlignment textAlignment = TextAlignment.left;
+
+  /// The text being typed into, if any.
+  InkStylable? editingText;
+
+  /// Selected text objects and text on paths.
+  List<InkStylable> get selectedTexts => [for (final e in selection) if (e is InkText || e is InkTextPath) e as InkStylable];
+
+  /// Ported from -[WDDrawingController createTextObjectInRect:]: area text in
+  /// [area] (at least [InkText.minimumWidth] wide), or point text at [at].
+  InkText createText({Offset? at, Rect? area}) {
+    finishActivePath();
+    checkpoint();
+    final t = InkText(
+      text: 'Text',
+      fontFamily: fontFamily,
+      fontStyle: fontStyle,
+      fontSize: fontSize,
+      alignment: textAlignment,
+      width: area == null ? null : math.max(InkText.minimumWidth, area.width),
+      placement: area != null ? Affine.translation(area.left, area.top) : Affine.translation(at!.dx, at.dy),
+      // Make sure the text isn't invisible.
+      fill: fillPaint is InkGradient ? (fillPaint as InkGradient).copyWith(clearGeometry: true) : (fillPaint ?? InkColor.black),
+      opacity: defaultOpacity,
+    );
+    drawing.activeLayer.elements.add(t);
+    selection
+      ..clear()
+      ..add(t);
+    editingText = t;
+    notifyListeners();
+    return t;
+  }
+
+  /// Starts typing into [t] (one undo step for the whole edit).
+  void beginEditing(InkStylable t) {
+    finishActivePath();
+    checkpoint();
+    selection
+      ..clear()
+      ..add(t);
+    editingText = t;
+    notifyListeners();
+  }
+
+  void updateEditingText(String value) {
+    final t = editingText;
+    if (t is InkText) t.text = value;
+    if (t is InkTextPath) t.text = value;
+    notifyListeners();
+  }
+
+  /// Finishes typing; text left empty is removed.
+  void endEditing() {
+    final t = editingText;
+    if (t == null) return;
+    editingText = null;
+    final text = t is InkText ? t.text : (t as InkTextPath).text;
+    if (text.trim().isEmpty) {
+      for (final l in drawing.layers) {
+        l.elements.remove(t);
+      }
+      selection.remove(t);
+    }
+    notifyListeners();
+  }
+
+  /// Sets font settings for new text and the selected text. Pass record:
+  /// false while a slider moves.
+  void setTextStyle({String? family, String? style, double? size, TextAlignment? alignment, bool record = true}) {
+    if (family != null) {
+      fontFamily = family;
+      // Keep the style if the new family has it, else its regular face.
+      final styles = FontLibrary.instance.stylesOf(family);
+      final keep = styles.any((f) => f.style == (style ?? fontStyle));
+      fontStyle = keep ? (style ?? fontStyle) : (styles.firstOrNull?.style ?? 'Regular');
+    } else if (style != null) {
+      fontStyle = style;
+    }
+    if (size != null) fontSize = size;
+    if (alignment != null) textAlignment = alignment;
+    final texts = selectedTexts;
+    if (texts.isNotEmpty) {
+      if (record) checkpoint();
+      for (final t in texts) {
+        if (t is InkText) {
+          if (family != null || style != null) {
+            t.fontFamily = fontFamily;
+            t.fontStyle = fontStyle;
+          }
+          if (size != null) t.fontSize = size;
+          if (alignment != null) t.alignment = alignment;
+        } else if (t is InkTextPath) {
+          if (family != null || style != null) {
+            t.fontFamily = fontFamily;
+            t.fontStyle = fontStyle;
+          }
+          if (size != null) t.fontSize = size;
+        }
+      }
+    }
+    notifyListeners();
+  }
+
+  /// When selecting text, its font becomes the current one (as in Inkpad).
+  void adoptTextStyle(InkStylable t) {
+    if (t is InkText) {
+      fontFamily = t.fontFamily;
+      fontStyle = t.fontStyle;
+      fontSize = t.fontSize;
+      textAlignment = t.alignment;
+    } else if (t is InkTextPath) {
+      fontFamily = t.fontFamily;
+      fontStyle = t.fontStyle;
+      fontSize = t.fontSize;
+    }
+  }
+
+  bool get canCreateOutlines => selectedTexts.isNotEmpty;
+
+  /// Ported from -[WDDrawingController createTextOutlines:]: text becomes
+  /// one compound path of its letter shapes, with the same style.
+  void createOutlines() {
+    if (!canCreateOutlines) return;
+    endEditing();
+    checkpoint();
+    final results = <InkElement>[];
+    for (final t in selectedTexts) {
+      final layer = layerOf(t);
+      if (layer == null) continue;
+      final shapes = (t as InkTypography).outlines;
+      if (shapes.isEmpty) continue;
+      final outline = InkCompoundPath(
+        [for (final p in shapes) InkPath(nodes: List.of(p.nodes), closed: true)],
+        fill: t.fill,
+        stroke: t.stroke,
+        opacity: t.opacity,
+      );
+      layer.elements[layer.elements.indexOf(t)] = outline;
+      results.add(outline);
+    }
+    selection
+      ..clear()
+      ..addAll(results);
+    notifyListeners();
+  }
+
+  /// Ported from -[WDDrawingController canPlaceTextOnPath]: a path alone, or
+  /// a path and a text object.
+  bool get canPlaceTextOnPath {
+    final paths = selection.whereType<InkPath>().where((p) => !p.isMasking).toList();
+    final texts = selection.whereType<InkText>().toList();
+    return paths.length == 1 && texts.length <= 1 && selection.length == paths.length + texts.length;
+  }
+
+  /// Ported from -[WDDrawingController placeTextOnPath:]: the path becomes a
+  /// text path, carrying the selected text (or "Text") and its font.
+  void placeTextOnPath() {
+    if (!canPlaceTextOnPath) return;
+    endEditing();
+    checkpoint();
+    final path = selection.whereType<InkPath>().single;
+    final source = selection.whereType<InkText>().firstOrNull;
+    final layer = layerOf(path)!;
+    final tp = InkTextPath(
+      text: source?.text.replaceAll('\n', ' ') ?? 'Text',
+      guide: InkPath(nodes: List.of(path.nodes), closed: path.closed),
+      fontFamily: source?.fontFamily ?? fontFamily,
+      fontStyle: source?.fontStyle ?? fontStyle,
+      fontSize: source?.fontSize ?? fontSize,
+      fill: source?.fill ?? fillPaint ?? InkColor.black,
+      stroke: source?.stroke,
+      opacity: source?.opacity ?? path.opacity,
+    );
+    layer.elements[layer.elements.indexOf(path)] = tp;
+    if (source != null) layerOf(source)?.elements.remove(source);
+    selection
+      ..clear()
+      ..add(tp);
+    editingText = source == null ? tp : null; // type the text straight away
     notifyListeners();
   }
 

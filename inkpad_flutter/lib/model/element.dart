@@ -5,8 +5,10 @@ import 'bezier_node.dart';
 import 'geometry.dart';
 import 'image.dart';
 import 'style.dart';
+import 'text.dart';
 
 export 'image.dart';
+export 'text.dart';
 
 /// Base class for everything that lives on a layer. Ported from WDElement.
 abstract class InkElement {
@@ -47,6 +49,8 @@ abstract class InkElement {
         'compound' => InkCompoundPath.fromJson(j),
         'group' => InkGroup.fromJson(j),
         'image' => InkImage.fromJson(j),
+        'text' => InkText.fromJson(j),
+        'textPath' => InkTextPath.fromJson(j),
         _ => throw FormatException('Unknown element type ${j['type']}'),
       };
 
@@ -72,6 +76,15 @@ class SvgWriter {
   String gradient(InkGradient g, Rect bounds) {
     final id = 'gradient${++_gradients}';
     definitions.add(g.svgDefinition(id, bounds));
+    return id;
+  }
+
+  int _textPaths = 0;
+
+  /// Adds a path for `<textPath>` to follow; returns its id.
+  String textPath(InkPath guide) {
+    final id = 'textpath${++_textPaths}';
+    definitions.add('<path id="$id" d="${guide.svgPathData}"/>');
     return id;
   }
 

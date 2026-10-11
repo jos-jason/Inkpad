@@ -8,6 +8,7 @@ import '../controller/drawing_controller.dart';
 import '../model/drawing.dart';
 import '../model/element.dart';
 import '../model/style.dart';
+import '../text/font_library.dart';
 import '../tools/tool.dart';
 
 /// Where the canvas is looking: screen = doc * scale + offset. Shared with
@@ -207,6 +208,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
     super.initState();
     c.addListener(_onControllerChanged);
     ImageData.decodes.addListener(_onControllerChanged);
+    FontLibrary.instance.addListener(_onControllerChanged);
   }
 
   @override
@@ -222,6 +224,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
   void dispose() {
     c.removeListener(_onControllerChanged);
     ImageData.decodes.removeListener(_onControllerChanged);
+    FontLibrary.instance.removeListener(_onControllerChanged);
     super.dispose();
   }
 
@@ -324,7 +327,20 @@ class _CanvasPainter extends CustomPainter {
       ..color = selectionColor;
 
     void outlineElement(InkElement e) {
-      if (e is InkImage) {
+      if (e is InkText) {
+        canvas.drawPath(Path()..addPolygon(e.corners, true), outline);
+      } else if (e is InkTextPath) {
+        canvas.drawPath(e.guide.toFlutterPath(), outline);
+        if (controller.selection.length == 1) {
+          // The start knob, draggable with the select tool.
+          final at = e.pointAt(e.startOffset);
+          if (at != null) {
+            canvas.drawCircle(at.$1, 6 * px, Paint()..color = Colors.white);
+            canvas.drawCircle(at.$1, 6 * px, outline);
+            canvas.drawLine(at.$1, at.$1 + Offset.fromDirection(at.$2 - math.pi / 2, e.fontSize), outline);
+          }
+        }
+      } else if (e is InkImage) {
         canvas.drawPath(Path()..addPolygon(e.corners, true), outline);
       } else if (e is InkStylable) {
         canvas.drawPath(e.toFlutterPath(), outline);

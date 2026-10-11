@@ -55,7 +55,7 @@ class _FakePicker extends FilePickerPlatform {
 
 const _logo = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">'
     '<g id="Shapes"><circle cx="50" cy="50" r="40" fill="tomato"/><rect x="110" y="10" width="80" height="80"/></g>'
-    '<text x="0" y="10">hi</text></svg>';
+    '<foreignObject width="10" height="10"/></svg>';
 
 void main() {
   late _FakePicker picker;
@@ -85,7 +85,7 @@ void main() {
     expect(find.text('Imported "Logo", with some differences'), findsOneWidget);
     await tester.tap(find.text('Details'));
     await tester.pumpAndSettle();
-    expect(find.text('• Skipped 1 text element'), findsOneWidget);
+    expect(find.text('• Skipped 1 embedded HTML element'), findsOneWidget);
   });
 
   testWidgets('Place SVG adds a selected, undoable group to the open drawing', (tester) async {

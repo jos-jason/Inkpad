@@ -10,6 +10,7 @@ export 'pen_tool.dart';
 export 'transform_tool.dart';
 export 'selection_tool.dart';
 export 'shape_tool.dart';
+export 'text_tool.dart';
 
 /// A pointer event already converted to document coordinates.
 class ToolEvent {

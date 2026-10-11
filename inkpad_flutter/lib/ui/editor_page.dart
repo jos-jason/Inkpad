@@ -22,6 +22,8 @@ import 'panels/fill_panel.dart';
 import 'panels/layers_panel.dart';
 import 'panels/misc_panels.dart';
 import 'panels/stroke_panel.dart';
+import 'panels/text_panel.dart';
+import 'text_editor_overlay.dart';
 
 /// The drawing editor: a full-screen canvas with rulers and floating
 /// panels, modelled on Inkpad's iPad interface (WDCanvasController).
@@ -68,6 +70,7 @@ class _EditorPageState extends State<EditorPage> {
   final _eyedropper = EyedropperTool();
   final _scale = ScaleTool();
   final _rotate = RotateTool();
+  final _text = TextTool();
   final _hand = HandTool();
 
   late final _shapes = PaletteGroup([
@@ -94,7 +97,7 @@ class _EditorPageState extends State<EditorPage> {
     _freehandGroup,
     PaletteTool('Eraser', const ToolIcon(ToolIcon.eraser), _eraser, shortcut: '⇧E'),
     _shapes,
-    const PaletteTool('Text', ToolIcon(ToolIcon.text), null),
+    PaletteTool('Text', const ToolIcon(ToolIcon.text), _text, shortcut: 'T'),
     PaletteTool('Eyedropper', const Icon(Icons.colorize), _eyedropper, shortcut: 'I'),
     PaletteTool('Scale', const ToolIcon(ToolIcon.scale), _scale, shortcut: 'K'),
     PaletteTool('Rotate', const ToolIcon(ToolIcon.rotate), _rotate, shortcut: 'O'),
@@ -102,11 +105,27 @@ class _EditorPageState extends State<EditorPage> {
 
   DrawingCanvasState? get canvas => canvasKey.currentState;
 
+  // Keyboard shortcuts listen here; it gets the keyboard back after typing.
+  final _keys = FocusNode(debugLabel: 'editor shortcuts');
+  bool _wasEditing = false;
+
+  void _onEditingChanged() {
+    final editing = controller.editingText != null;
+    if (_wasEditing && !editing) {
+      // After the text field has gone, so it can't take the focus with it.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && controller.editingText == null) _keys.requestFocus();
+      });
+    }
+    _wasEditing = editing;
+  }
+
   @override
   void initState() {
     super.initState();
     _lastSaved = controller.drawing.encode(includeImages: false);
     controller.addListener(_scheduleAutosave);
+    controller.addListener(_onEditingChanged);
     _lifecycle = AppLifecycleListener(onHide: _saveNow, onPause: _saveNow);
   }
 
@@ -122,6 +141,7 @@ class _EditorPageState extends State<EditorPage> {
     _lifecycle.dispose();
     controller.dispose();
     view.dispose();
+    _keys.dispose();
     super.dispose();
   }
 
@@ -176,6 +196,8 @@ class _EditorPageState extends State<EditorPage> {
 
   Map<ShortcutActivator, VoidCallback> get _shortcuts {
     final c = controller;
+    // Typing text: letters are text, not tool shortcuts.
+    if (c.editingText != null) return const {};
     final map = <ShortcutActivator, VoidCallback>{
       const SingleActivator(LogicalKeyboardKey.delete): c.deleteSelection,
       const SingleActivator(LogicalKeyboardKey.backspace): c.deleteSelection,
@@ -191,7 +213,7 @@ class _EditorPageState extends State<EditorPage> {
     };
     final shortcutTools = <String, Tool>{
       'V': _select, 'A': _direct, 'P': _pen, 'N': _anchor, 'R': _rect, 'E': _oval, 'S': _star, 'G': _polygon, 'L': _line,
-      'K': _scale, 'O': _rotate, 'H': _hand, 'C': _scissors, 'B': _brush, 'F': _freehand, 'I': _eyedropper,
+      'K': _scale, 'O': _rotate, 'H': _hand, 'C': _scissors, 'B': _brush, 'F': _freehand, 'I': _eyedropper, 'T': _text,
     };
     map[const SingleActivator(LogicalKeyboardKey.keyE, shift: true)] = () => _setTool(_eraser);
     for (final MapEntry(key: letter, value: tool) in shortcutTools.entries) {
@@ -288,7 +310,6 @@ class _EditorPageState extends State<EditorPage> {
 
   List<MenuEntry> _pathMenu() {
     final c = controller;
-    const soon = MenuAction.new;
     MenuAction shapes(String label, BooleanOp op) => MenuAction(label, c.canCombineShapes ? () => _combine(op) : null);
     return [
       MenuAction('Add Anchor Points', c.canAddAnchors ? c.addAnchorPoints : null),
@@ -308,8 +329,8 @@ class _EditorPageState extends State<EditorPage> {
       MenuAction('Mask', c.canMakeMask ? c.makeMask : null),
       MenuAction('Unmask', c.canReleaseMask ? c.releaseMask : null),
       const MenuDivider(),
-      soon('Create Outlines from Text', null, comingSoon: true),
-      soon('Place Text on Path', null, comingSoon: true),
+      MenuAction('Create Outlines from Text', c.canCreateOutlines ? c.createOutlines : null),
+      MenuAction('Place Text on Path', c.canPlaceTextOnPath ? c.placeTextOnPath : null),
     ];
   }
 
@@ -346,6 +367,7 @@ class _EditorPageState extends State<EditorPage> {
         return CallbackShortcuts(
           bindings: _shortcuts,
           child: Focus(
+            focusNode: _keys,
             autofocus: true,
             child: Scaffold(
               body: Stack(children: [
@@ -368,6 +390,15 @@ class _EditorPageState extends State<EditorPage> {
                     ),
                   ]),
                 ),
+                if (controller.editingText != null)
+                  Positioned.fill(
+                    child: TextEditorOverlay(
+                      key: ObjectKey(controller.editingText),
+                      controller: controller,
+                      view: view,
+                      origin: rulers ? const Offset(Ruler.thickness, Ruler.thickness) : Offset.zero,
+                    ),
+                  ),
                 SafeArea(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(rulers ? 30 : 12, 12, 12, 12),
@@ -528,7 +559,13 @@ class _EditorPageState extends State<EditorPage> {
     return Pill(
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         if (!compact)
-          const IconButton(tooltip: 'Text style (coming soon)', onPressed: null, icon: Icon(Icons.text_fields)),
+          Builder(
+            builder: (b) => IconButton(
+              tooltip: 'Text',
+              icon: const Icon(Icons.text_fields),
+              onPressed: () => _panel(b, TextPanel(controller: c), width: 380),
+            ),
+          ),
         Builder(
           builder: (b) => IconButton(
             tooltip: 'Shadow & opacity',

@@ -10,6 +10,7 @@ import '../model/drawing.dart';
 import '../model/element.dart';
 import '../model/geometry.dart';
 import '../model/style.dart';
+import '../text/font_library.dart';
 import 'svg_path_parser.dart';
 import 'svg_values.dart';
 
@@ -43,13 +44,15 @@ class SvgImportException implements Exception {
 /// masks made of solid white shapes become clipping masks.
 /// Approximated: gradient outlines (become a solid color), soft masks
 /// (even transparency), patterns (left out). Embedded bitmap images are
-/// imported; linked images and text are skipped.
+/// imported; linked images are skipped. Text keeps one font per text
+/// object (styled runs take the text's own style).
 SvgImportResult importSvg(String source) => _SvgImporter(source).run();
 
 /// Properties that children inherit from their parents.
 const _inherited = {
   'fill', 'fill-opacity', 'fill-rule', 'clip-rule', 'stroke', 'stroke-width', 'stroke-opacity',
   'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'color', 'visibility',
+  'font-family', 'font-size', 'font-weight', 'font-style', 'text-anchor',
 };
 
 /// Properties that can be set by attribute, CSS or style="".
@@ -399,7 +402,7 @@ class _SvgImporter {
         final nodes = [for (var i = 0; i + 1 < n.length; i += 2) BezierNode.anchor(Offset(n[i], n[i + 1]))];
         result = nodes.length > 1 ? _shape([InkPath(nodes: nodes, closed: name == 'polygon')], context) : null;
       case 'text':
-        _skip('text element');
+        result = _text(e, context);
       case 'image':
         result = _image(e, context);
       case 'foreignObject':
@@ -654,6 +657,20 @@ class _SvgImporter {
     for (final p in subpaths) {
       p.transform(context.ctm);
     }
+    final (fill, stroke) = _paints(context, localBounds, canFill: canFill);
+    final rule = context.inherited['fill-rule'] == 'evenodd' ? FillRule.evenOdd : FillRule.nonZero;
+    if (subpaths.length == 1) {
+      return subpaths.single
+        ..fill = fill
+        ..stroke = stroke
+        ..fillRule = rule;
+    }
+    return InkCompoundPath(subpaths, fill: fill, stroke: stroke, fillRule: rule);
+  }
+
+  /// The fill and stroke for something drawn in [context], whose local
+  /// bounds (for gradients) are [localBounds].
+  (InkPaint?, StrokeStyle?) _paints(_Context context, Rect localBounds, {bool canFill = true}) {
     final style = context.inherited;
     final scale = context.ctm.scaleFactor;
 
@@ -682,15 +699,138 @@ class _SvgImporter {
         dashPattern: dashes.map((d) => d * scale).toList(),
       );
     }
+    return (fill, stroke);
+  }
 
-    final rule = style['fill-rule'] == 'evenodd' ? FillRule.evenOdd : FillRule.nonZero;
-    if (subpaths.length == 1) {
-      return subpaths.single
-        ..fill = fill
-        ..stroke = stroke
-        ..fillRule = rule;
+  // ---- Text -----------------------------------------------------------------
+
+  /// A `<text>` element: point text, Inkpad's wrapping area text (marked
+  /// with inkpad:width), or text on a path (`<textPath>`).
+  InkElement? _text(XmlElement e, _Context context) {
+    final style = context.inherited;
+    final family = _fontFamily(style['font-family']);
+    final fontStyle = _fontStyle(family, style['font-weight'], style['font-style']);
+    final size = parseLength(style['font-size'], percentOf: _viewDiagonal) ?? 16;
+    final preserve = _attrLocal(e, 'space') == 'preserve';
+
+    final textPath = e.childElements.where((c) => c.name.local == 'textPath').firstOrNull;
+    if (textPath != null) return _textOnPath(e, textPath, context, family, fontStyle, size, preserve);
+
+    // Lines: a tspan with its own y starts a new line.
+    final lines = <String>[];
+    var current = StringBuffer();
+    Offset? anchor;
+    double? lastY;
+    void visit(XmlNode n) {
+      if (n is XmlText || n is XmlCDATA) {
+        current.write(n.value);
+      } else if (n is XmlElement && n.name.local == 'tspan') {
+        final y = parseNumberList(n.getAttribute('y')).firstOrNull;
+        final x = parseNumberList(n.getAttribute('x')).firstOrNull;
+        if (y != null && lastY != null && y != lastY && current.isNotEmpty) {
+          lines.add(current.toString());
+          current = StringBuffer();
+        }
+        if (y != null) lastY = y;
+        anchor ??= (x != null || y != null) ? Offset(x ?? 0, y ?? 0) : null;
+        n.children.forEach(visit);
+      }
     }
-    return InkCompoundPath(subpaths, fill: fill, stroke: stroke, fillRule: rule);
+
+    e.children.forEach(visit);
+    lines.add(current.toString());
+    final text = [for (final l in lines) preserve ? l.replaceAll('\n', ' ') : l.replaceAll(RegExp(r'\s+'), ' ').trim()]
+        .join('\n');
+    if (text.trim().isEmpty) return null;
+
+    final ownX = parseNumberList(e.getAttribute('x')).firstOrNull;
+    final ownY = parseNumberList(e.getAttribute('y')).firstOrNull;
+    if (ownX != null || ownY != null) anchor = Offset(ownX ?? 0, ownY ?? 0);
+
+    final width = double.tryParse(_attrLocal(e, 'width') ?? '');
+    final InkText t;
+    if (width != null && e.getAttribute('inkpad:width') != null) {
+      // Inkpad's own area text: the transform places the box's corner.
+      final align = TextAlignment.values.asNameMap()[_attrLocal(e, 'align')] ?? TextAlignment.left;
+      final typed = _attrLocal(e, 'text') ?? text;
+      t = InkText(text: typed, fontFamily: family, fontStyle: fontStyle, fontSize: size, alignment: align, width: width, placement: context.ctm);
+    } else {
+      final align = switch (style['text-anchor']) { 'middle' => TextAlignment.center, 'end' => TextAlignment.right, _ => TextAlignment.left };
+      final at = anchor ?? Offset.zero;
+      t = InkText(
+        text: text,
+        fontFamily: family,
+        fontStyle: fontStyle,
+        fontSize: size,
+        alignment: align,
+        placement: Affine.translation(at.dx, at.dy).then(context.ctm),
+      );
+    }
+    final (fill, stroke) = _paints(context, t.layoutBox.shift(anchor ?? Offset.zero));
+    return t
+      ..fill = fill
+      ..stroke = stroke;
+  }
+
+  InkElement? _textOnPath(XmlElement text, XmlElement tp, _Context context, String family, String fontStyle, double size, bool preserve) {
+    final id = _attrLocal(tp, 'href')?.replaceFirst('#', '');
+    final target = id == null ? null : _ids[id];
+    if (target == null || target.name.local != 'path') {
+      _skip('text on a missing path');
+      return null;
+    }
+    var content = tp.innerText;
+    content = preserve ? content.replaceAll('\n', ' ') : content.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (content.isEmpty) return null;
+    final paths = parseSvgPathData(target.getAttribute('d') ?? '').where((p) => p.nodes.length > 1).toList();
+    if (paths.isEmpty) return null;
+    final guide = paths.first..transform(parseTransform(target.getAttribute('transform')).then(context.ctm));
+    final scale = context.ctm.scaleFactor;
+    final result = InkTextPath(text: content, guide: guide, fontFamily: family, fontStyle: fontStyle, fontSize: size * scale);
+    final offset = tp.getAttribute('startOffset')?.trim();
+    if (offset != null) {
+      result.startOffset = offset.endsWith('%')
+          ? (double.tryParse(offset.substring(0, offset.length - 1)) ?? 0) / 100 * result.pathLength
+          : (double.tryParse(offset) ?? 0) * scale;
+    }
+    final (fill, stroke) = _paints(context, guide.bounds);
+    return result
+      ..fill = fill
+      ..stroke = stroke;
+  }
+
+  /// The first installed family in a CSS font-family list; generic names
+  /// and missing fonts keep their name (drawn with the fallback until the
+  /// font is available).
+  String _fontFamily(String? value) {
+    final quotes = RegExp(r'''^["']|["']$''');
+    final names = [
+      for (final n in (value ?? '').split(','))
+        if (n.trim().replaceAll(quotes, '') case final name when name.isNotEmpty) name,
+    ];
+    final library = FontLibrary.instance;
+    for (final n in names) {
+      if (library.has(n)) return n;
+    }
+    const generic = {'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui'};
+    final named = names.where((n) => !generic.contains(n)).firstOrNull;
+    if (named == null) return library.defaultFamily;
+    _notes.add('Some fonts aren\'t on this device; their text uses ${FontLibrary.fallbackFamily} until they are');
+    return named;
+  }
+
+  /// The family's style closest to a CSS weight and style.
+  String _fontStyle(String family, String? weightValue, String? styleValue) {
+    final weight = switch (weightValue) { 'bold' || 'bolder' => 700, 'lighter' => 300, null || 'normal' => 400, _ => int.tryParse(weightValue) ?? 400 };
+    final italic = styleValue == 'italic' || styleValue == 'oblique';
+    final styles = FontLibrary.instance.stylesOf(family);
+    if (styles.isEmpty) {
+      return switch ((weight >= 600, italic)) { (true, true) => 'Bold Italic', (true, false) => 'Bold', (false, true) => 'Italic', _ => 'Regular' };
+    }
+    final candidates = styles.where((f) => f.italic == italic).toList();
+    final pool = candidates.isEmpty ? styles : candidates;
+    pool.sort((a, b) => (a.weight - weight).abs().compareTo((b.weight - weight).abs()));
+    return pool.first.style;
   }
 
   /// Resolves a fill or stroke value. Gradients need the shape's local

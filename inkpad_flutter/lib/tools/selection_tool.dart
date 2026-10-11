@@ -7,7 +7,7 @@ import '../model/geometry.dart';
 import '../model/style.dart';
 import 'tool.dart';
 
-enum _Mode { none, move, anchor, handle, gradientStart, gradientEnd, scale, rotate, marquee }
+enum _Mode { none, move, anchor, handle, gradientStart, gradientEnd, textStart, scale, rotate, marquee }
 
 /// Selects, moves, scales, rotates and node-edits. Combines Inkpad's WDSelectionTool
 /// behaviour for elements with direct editing of the selected path's nodes.
@@ -87,6 +87,16 @@ class SelectionTool extends Tool {
       }
     }
 
+    // 1b. The start of text on a path (Inkpad's start-offset knob).
+    final textPath = c.selection.length == 1 && c.selection.first is InkTextPath ? c.selection.first as InkTextPath : null;
+    if (textPath != null) {
+      final at = textPath.pointAt(textPath.startOffset);
+      if (at != null && (at.$1 - e.point).distance < tol) {
+        _mode = _Mode.textStart;
+        return;
+      }
+    }
+
     // 2. Handles/anchors of the single selected path. Double-clicking a point
     // adds or removes its handles (Inkpad's convertNode).
     final path = c.singleSelectedPath;
@@ -131,6 +141,12 @@ class SelectionTool extends Tool {
       if (e.shift && c.selection.contains(hit)) {
         c.selection.remove(hit);
         c.changed();
+        _mode = _Mode.none;
+        return;
+      }
+      // Double-click text to edit it (as in Inkpad).
+      if (e.count == 2 && (hit is InkText || hit is InkTextPath)) {
+        c.beginEditing(hit as InkStylable);
         _mode = _Mode.none;
         return;
       }
@@ -211,6 +227,11 @@ class SelectionTool extends Tool {
         final t = Affine.rotationAbout(_rotatePivot, angle);
         c.transformSelection(_applied.inverted().then(t));
         _applied = t;
+      case _Mode.textStart:
+        _ensureCheckpoint(c);
+        final tp = c.selection.first as InkTextPath;
+        tp.startOffset = tp.offsetNearest(e.point);
+        c.changed();
       case _Mode.marquee:
         marquee = rectFromPoints(_start, e.point);
         c.selection

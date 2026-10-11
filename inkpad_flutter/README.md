@@ -28,6 +28,7 @@ flutter test
 | `lib/ui/drawing_canvas.dart` | `WDCanvas` |
 | `lib/svg/` | `Inkpad-Core/SVG/*` |
 | `lib/library/`, `lib/ui/library_page.dart` | `WDDrawingManager`, `WDBrowserController` |
+| `lib/model/text.dart`, `lib/text/` | `WDText`, `WDTextPath`, `WDFontManager` |
 
 ## Status
 
@@ -69,6 +70,19 @@ Done:
 - Eyedropper (I): copy a shape's fill, stroke and opacity onto the selection
   and the current style (or a photo's pixel color as the fill)
 - Spiral shape with Decay option (10–99%)
+- Text (T), as in Inkpad: drag a box for wrapping text, tap for point text,
+  tap existing text (or double-click it with the select tool) to edit it.
+  The Text panel (Tt) sets font, style, size and alignment for the selection
+  and new text. Path menu: Create Outlines from Text, and Place Text on Path
+  (drag the start handle to slide the text along). Letters are drawn from
+  the font's own outlines, so the screen, SVG export and outlines match.
+- Fonts: the fonts installed on the device (macOS, Linux, Windows, Android;
+  scanned in the background and cached) plus Lato, bundled. "Add Font…" in
+  the Text panel adds a .ttf/.otf/.ttc to the app without installing it
+  system-wide. Browsers don't expose installed fonts, so the web version has
+  Lato plus fonts added during the session. Text whose font is missing is
+  drawn with Lato and keeps its font name, so it comes back on a device
+  that has the font
 - Edit menu: select all / in layer, deselect, cut, copy, paste, duplicate,
   duplicate in place, transform again, duplicate & transform again, delete
 - Arrange menu: forward/backward one step, front/back, flip, rotate 90°,
@@ -105,7 +119,8 @@ Done:
   embedded images are imported (with preserveAspectRatio);
   solid masks become clipping masks, soft masks (fades) are approximated with
   even transparency; gradient outlines become a solid color; linked (not
-  embedded) images and text are skipped. Anything approximated is reported after import.
+  embedded) images are skipped. Text and text on a path import as editable
+  text (one font per text object). Anything approximated is reported after import.
   Tested against ~3,000 real-world SVGs. "Place SVG…" in the editor adds an
   SVG to the open drawing.
 - Responsive layout (side panels on desktop/tablet, bottom bar on phones)
@@ -115,19 +130,15 @@ To port next (roughly in priority order; greyed out in the UI):
 - Color menu (color wheel): blend back to front / horizontally / vertically,
   color balance, hue & saturation, desaturate, invert
 - AI edit (placeholder button for now)
-- Text tool; arrowheads
+- Arrowheads; per-letter styling (mixed fonts/colors within one text)
 - Releasing compound paths; gradient outlines (strokes)
-- Boolean path operations (`WDPathfinder` / livarot). Note: livarot comes from
-  Inkscape; check its license before porting it rather than reimplementing.
-- Freehand tool with curve fitting (`CurveFit`), scissors, eraser
-- Text and text-on-path (and SVG text import), shadows, arrowheads, dash patterns UI
 - Snapping (grid, points, edges), rulers, PDF/PNG export
 - Full color picker
 
 ## Keyboard shortcuts
 
 V select · A direct select · O rotate · K scale · P pen · N add/delete point ·
-C scissors · B brush · F freehand · Shift+E eraser · I eyedropper · R rect · E oval · S star · G polygon · L line · H hand ·
+C scissors · B brush · F freehand · Shift+E eraser · I eyedropper · T text · R rect · E oval · S star · G polygon · L line · H hand ·
 Ctrl/Cmd+Z undo · Shift+Ctrl/Cmd+Z redo · Ctrl/Cmd+D duplicate ·
 Ctrl/Cmd+G group · Shift+Ctrl/Cmd+G ungroup · Ctrl/Cmd+S save now ·
 Ctrl/Cmd+E export SVG · Ctrl/Cmd+7 make clipping mask ·
@@ -141,6 +152,10 @@ center or breaks handle symmetry.
 
 - [Clipper2](https://pub.dev/packages/clipper2) (polygon boolean operations
   and offsetting) — Boost Software License 1.0
+- [glyph_path](https://pub.dev/packages/glyph_path) (reading TrueType/OpenType
+  outlines, kerning and ligatures) — BSD 3-Clause
+- [Lato](https://fonts.google.com/specimen/Lato) (bundled fallback font) —
+  SIL Open Font License 1.1 (`assets/fonts/Lato-OFL.txt`)
 
 ## License
 

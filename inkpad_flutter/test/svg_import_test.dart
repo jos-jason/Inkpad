@@ -284,7 +284,7 @@ void main() {
         </defs>
         <rect x="10" y="20" width="40" height="80" fill="url(#g)" fill-opacity="0.5"/>
         <rect width="10" height="10" fill="url(#nothing) blue"/>
-        <text>Hi</text><text>There</text>
+        <foreignObject/><foreignObject/>
         <image href="x.png"/>
       '''));
       final s = shapes(r.drawing);
@@ -299,7 +299,7 @@ void main() {
       expect(geom.documentStart, const Offset(10, 20));
       expect(geom.documentEnd, const Offset(10, 100));
       expect(s[1].fill, const InkColor(0, 0, 1));
-      expect(r.warnings, containsAll(['Skipped 2 text elements', 'Linked images (not embedded in the file) were skipped']));
+      expect(r.warnings, containsAll(['Skipped 2 embedded HTML elements', 'Linked images (not embedded in the file) were skipped']));
       expect(r.warnings.any((w) => w.contains('radient')), isFalse);
     });
 

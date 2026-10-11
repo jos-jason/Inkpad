@@ -33,6 +33,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.2"
+  cacherine:
+    dependency: transitive
+    description:
+      name: cacherine
+      sha256: f207e932fd83c417480e2560a457304291b6903ed94c4d592526c18f9d27dd34
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.5.0"
   characters:
     dependency: transitive
     description:
@@ -200,6 +208,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  glyph_path:
+    dependency: "direct main"
+    description:
+      name: glyph_path
+      sha256: "85000cc743734168e8c5895ab784b9e4ca5565382a73104d22f53765ddfa04f7"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.1"
   hooks:
     dependency: transitive
     description:
@@ -501,6 +517,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.1"
+  synchronized:
+    dependency: transitive
+    description:
+      name: synchronized
+      sha256: "397b146f97613b83d84bdccb439bc8d0f3aebb6c1d14a9641e6f24201c490b2d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.4.2"
   term_glyph:
     dependency: transitive
     description:

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../model/drawing.dart';
 import '../model/image.dart';
+import '../text/font_library.dart';
 
 /// Renders a whole drawing scaled to fit, on a white page.
 class DrawingThumbnail extends StatelessWidget {
@@ -23,7 +24,10 @@ class DrawingThumbnail extends StatelessWidget {
         child: ClipRect(
           child: ValueListenableBuilder(
             valueListenable: ImageData.decodes,
-            builder: (context, _, _) => CustomPaint(painter: _ThumbnailPainter(drawing)),
+            builder: (context, _, _) => ListenableBuilder(
+              listenable: FontLibrary.instance,
+              builder: (context, _) => CustomPaint(painter: _ThumbnailPainter(drawing)),
+            ),
           ),
         ),
       ),

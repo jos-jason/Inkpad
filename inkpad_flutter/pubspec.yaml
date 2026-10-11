@@ -40,6 +40,7 @@ dependencies:
   xml: ^7.1.0
   crypto: ^3.0.7
   clipper2: ^0.0.3
+  glyph_path: ^2.0.1
 
 dev_dependencies:
   flutter_test:
@@ -64,6 +65,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/fonts/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
