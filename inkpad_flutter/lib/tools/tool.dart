@@ -4,6 +4,7 @@ import '../controller/drawing_controller.dart';
 
 export 'anchor_tool.dart';
 export 'direct_select_tool.dart';
+export 'drawing_tools.dart';
 export 'hand_tool.dart';
 export 'pen_tool.dart';
 export 'transform_tool.dart';

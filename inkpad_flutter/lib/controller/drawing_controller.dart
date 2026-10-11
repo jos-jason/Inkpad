@@ -444,6 +444,165 @@ class DrawingController extends ChangeNotifier {
     selection.remove(path);
   }
 
+  /// The list that holds [e] (a layer's, a group's, a mask's or a compound
+  /// path's subpaths), or null.
+  List<InkElement>? containerOf(InkElement e) {
+    List<InkElement>? search(List<InkElement> list) {
+      if (list.contains(e)) return list;
+      for (final x in list) {
+        if (x is InkCompoundPath && x.subpaths.contains(e)) return x.subpaths;
+        final inner = switch (x) {
+          InkGroup() => search(x.elements),
+          _ => null,
+        };
+        if (inner != null) return inner;
+        if (x is InkStylable) {
+          final masked = search(x.maskedElements);
+          if (masked != null) return masked;
+        }
+      }
+      return null;
+    }
+
+    for (final l in drawing.layers) {
+      final found = search(l.elements);
+      if (found != null) return found;
+    }
+    return null;
+  }
+
+  // ---- Scissors (ported from WDScissorTool / -[WDPath splitAtNode:]) -----
+
+  /// Cuts [path] at node [index]. An open path becomes two paths (it can't
+  /// be cut at its ends); a closed path opens up at that point. Returns the
+  /// path holding the second half, or null if nothing was cut.
+  InkPath? splitPath(InkPath path, int index) {
+    final n = path.nodes.length;
+    if (!path.closed && (index <= 0 || index >= n - 1)) return null;
+    final container = containerOf(path);
+    if (container == null) return null;
+    checkpoint();
+    final node = path.nodes[index];
+    InkPath result;
+    if (path.closed) {
+      path
+        ..nodes = [...path.nodes.sublist(index), ...path.nodes.sublist(0, index), node]
+        ..closed = false;
+      result = path;
+    } else {
+      final sibling = InkPath(
+        nodes: path.nodes.sublist(index),
+        fill: path.fill,
+        stroke: path.stroke,
+        fillRule: path.fillRule,
+        opacity: path.opacity,
+      );
+      path.nodes = path.nodes.sublist(0, index + 1);
+      container.insert(container.indexOf(path) + 1, sibling);
+      result = sibling;
+    }
+    final owner = pathOwners()[result];
+    selection
+      ..clear()
+      ..addAll([?owner]);
+    selectedNodes.clear();
+    notifyListeners();
+    return result;
+  }
+
+  /// Cuts [path] where segment [segment] is at parameter [t].
+  InkPath? splitPathAt(InkPath path, int segment, double t) {
+    path.insertAnchor(segment, t);
+    final result = splitPath(path, segment + 1);
+    if (result == null) path.deleteAnchor(segment + 1); // ends can't be cut
+    return result;
+  }
+
+  // ---- Eraser (ported from -[WDDrawingController eraseWithPath:]) ---------
+
+  /// Erases [eraser]'s area from the selected shapes, or from every shape in
+  /// visible, unlocked layers when nothing is selected. Closed shapes lose
+  /// the area; open paths are cut into the pieces that remain.
+  void erase(InkStylable eraser) {
+    final area = eraser.bounds;
+    final targets = <InkStylable>[
+      if (selection.isNotEmpty)
+        ...orderedSelection.whereType<InkStylable>()
+      else
+        for (final l in drawing.layers)
+          if (l.editable) ...l.elements.whereType<InkStylable>(),
+    ].where((e) => !e.isMasking && e.bounds.overlaps(area)).toList();
+    if (targets.isEmpty) return;
+    checkpoint();
+    final wasSelected = selection.isNotEmpty;
+    final results = <InkElement>[];
+    for (final e in targets) {
+      final layer = layerOf(e);
+      if (layer == null) continue;
+      final List<InkStylable> pieces;
+      if (e is InkPath && !e.closed) {
+        pieces = [
+          for (final p in Pathfinder.eraseOpen(e, eraser))
+            p
+              ..fill = e.fill
+              ..stroke = e.stroke
+              ..opacity = e.opacity,
+        ];
+      } else {
+        final r = Pathfinder.combine([e, eraser], BooleanOp.subtractFront);
+        pieces = [
+          if (r != null)
+            r
+              ..fill = e.fill
+              ..stroke = e.stroke
+              ..fillRule = r.fillRule
+              ..opacity = e.opacity,
+        ];
+      }
+      final i = layer.elements.indexOf(e);
+      layer.elements
+        ..removeAt(i)
+        ..insertAll(i, pieces);
+      results.addAll(pieces);
+    }
+    selection.clear();
+    if (wasSelected) selection.addAll(results);
+    selectedNodes.clear();
+    notifyListeners();
+  }
+
+  // ---- Eyedropper (ported from WDEyedropperTool) ---------------------------
+
+  /// Copies [source]'s style into the current style and onto the selection.
+  /// For images, [sampled] (the pixel color) becomes the fill.
+  void pickStyle(InkElement source, {InkColor? sampled}) {
+    if (source is InkStylable) {
+      final f = source.fill;
+      fillPaint = f is InkGradient ? f.copyWith(clearGeometry: true) : f;
+      strokeStyle = source.stroke;
+    } else if (sampled != null) {
+      fillPaint = sampled;
+    } else {
+      return;
+    }
+    defaultOpacity = source.opacity;
+    final targets = selection.where((e) => !identical(e, source)).toList();
+    if (targets.isNotEmpty) {
+      checkpoint();
+      void apply(InkElement e) {
+        if (e is InkStylable) {
+          e.fill = fillPaint;
+          if (source is InkStylable) e.stroke = strokeStyle;
+          e.opacity = defaultOpacity;
+        } else if (e is InkGroup) {
+          e.elements.forEach(apply);
+        }
+      }
+      targets.forEach(apply);
+    }
+    notifyListeners();
+  }
+
   // ---- Path menu (ported from Inkpad's Path menu) ---------------------------
 
   /// Selected paths, including the subpaths of selected compound paths.

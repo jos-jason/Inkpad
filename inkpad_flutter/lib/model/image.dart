@@ -58,6 +58,32 @@ class ImageData {
     return _decoded;
   }
 
+  ByteData? _pixels;
+  bool _loadingPixels = false;
+
+  /// Starts reading the decoded pixels (for the eyedropper).
+  void loadPixels() {
+    final img = decoded;
+    if (img == null || _pixels != null || _loadingPixels) return;
+    _loadingPixels = true;
+    img.toByteData(format: ui.ImageByteFormat.rawStraightRgba).then((b) {
+      _pixels = b;
+      _loadingPixels = false;
+      decodes.value++;
+    });
+  }
+
+  /// The color at [natural] (in the image's own pixel coordinates), once
+  /// [loadPixels] has finished; null otherwise or outside the image.
+  (double, double, double, double)? pixelAt(Offset natural) {
+    final img = _decoded, bytes = _pixels;
+    if (img == null || bytes == null) return null;
+    final x = (natural.dx / width * img.width).floor(), y = (natural.dy / height * img.height).floor();
+    if (x < 0 || y < 0 || x >= img.width || y >= img.height) return null;
+    final i = (y * img.width + x) * 4;
+    return (bytes.getUint8(i) / 255, bytes.getUint8(i + 1) / 255, bytes.getUint8(i + 2) / 255, bytes.getUint8(i + 3) / 255);
+  }
+
   Future<void> _decode() async {
     _decoding = true;
     try {

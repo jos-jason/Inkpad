@@ -61,6 +61,14 @@ Done:
   Shape operations (`lib/geometry/`) flatten curves, combine the polygons with
   Clipper2, then refit beziers — as Inkpad's livarot engine did — keeping
   corners and crossing points sharp and straight edges straight
+- Freehand (F, closed filled shapes) and Brush (B, open lines), smoothed with
+  Schneider curve fitting as Inkpad's WDCurveFit did
+- Eraser (Shift+E, size 1–100 pt): erases the selection, or everything when
+  nothing is selected; shapes lose the area, lines are cut into pieces
+- Scissors (C): cut a line or point; open paths split in two, closed ones open
+- Eyedropper (I): copy a shape's fill, stroke and opacity onto the selection
+  and the current style (or a photo's pixel color as the fill)
+- Spiral shape with Decay option (10–99%)
 - Edit menu: select all / in layer, deselect, cut, copy, paste, duplicate,
   duplicate in place, transform again, duplicate & transform again, delete
 - Arrange menu: forward/backward one step, front/back, flip, rotate 90°,
@@ -107,7 +115,7 @@ To port next (roughly in priority order; greyed out in the UI):
 - Color menu (color wheel): blend back to front / horizontally / vertically,
   color balance, hue & saturation, desaturate, invert
 - AI edit (placeholder button for now)
-- Scissors, eraser, freehand & brush, spiral, eyedropper; arrowheads; text
+- Text tool; arrowheads
 - Releasing compound paths; gradient outlines (strokes)
 - Boolean path operations (`WDPathfinder` / livarot). Note: livarot comes from
   Inkscape; check its license before porting it rather than reimplementing.
@@ -118,7 +126,8 @@ To port next (roughly in priority order; greyed out in the UI):
 
 ## Keyboard shortcuts
 
-V select · A direct select · O rotate · K scale · P pen · N add/delete point · R rect · E oval · S star · G polygon · L line · H hand ·
+V select · A direct select · O rotate · K scale · P pen · N add/delete point ·
+C scissors · B brush · F freehand · Shift+E eraser · I eyedropper · R rect · E oval · S star · G polygon · L line · H hand ·
 Ctrl/Cmd+Z undo · Shift+Ctrl/Cmd+Z redo · Ctrl/Cmd+D duplicate ·
 Ctrl/Cmd+G group · Shift+Ctrl/Cmd+G ungroup · Ctrl/Cmd+S save now ·
 Ctrl/Cmd+E export SVG · Ctrl/Cmd+7 make clipping mask ·

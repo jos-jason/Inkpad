@@ -81,6 +81,57 @@ class Pathfinder {
     return _toShape(_fromPaths(out), (a, b, c) => turnAngle(a, b, c) > 0.6);
   }
 
+  /// Erases [eraser]'s area from an open path, cutting it into the pieces
+  /// that remain. Ported from -[WDPath erase:] for open paths.
+  static List<InkPath> eraseOpen(InkPath path, InkStylable eraser) {
+    final oracle = _CornerOracle();
+    final line = _flattenPath(path, oracle);
+    final eraserPolys = _normalize(eraser, _CornerOracle());
+    final c = cl.ClipperD(roundingDecimalPrecision: _precision);
+    c.addOpenSubjects(_toPaths([line]));
+    c.addPaths(eraserPolys, cl.PathType.clip);
+    final open = c.execute(cl.ClipType.difference, cl.FillRule.nonZero)?.open ?? const [];
+    final pieces = <InkPath>[];
+    for (final poly in _fromPaths(open)) {
+      if (poly.length < 2) continue;
+      final n = poly.length;
+      // Clipper may return a piece backwards; keep the original direction.
+      final nodes = fitNodes(
+        poly,
+        closed: false,
+        isCorner: (i) => i == 0 || i == n - 1 || oracle.isCorner(poly[i - 1], poly[i], poly[i + 1]),
+        tolerance: fitTolerance,
+      );
+      if (nodes.length >= 2) pieces.add(InkPath(nodes: nodes));
+    }
+    return pieces;
+  }
+
+  /// Smooths a hand-drawn polyline into a bezier path, as Inkpad's
+  /// WDCurveFit did for its freehand, brush and eraser tools. [tolerance]
+  /// is in document units (larger is smoother). With [close], the result
+  /// is a closed shape; otherwise it closes only if the ends nearly meet.
+  static InkPath? smooth(List<Offset> points, {required double tolerance, bool close = false}) {
+    // Drop points closer together than a fraction of the tolerance.
+    final pts = <Offset>[];
+    for (final p in points) {
+      if (pts.isEmpty || (p - pts.last).distance >= tolerance * 0.25) pts.add(p);
+    }
+    if (pts.length < 2) return null;
+    final closed = close || (pts.length > 3 && (pts.first - pts.last).distance < tolerance * 2);
+    if (closed && (pts.first - pts.last).distance < tolerance * 2) pts.removeLast();
+    final n = pts.length;
+    if (n < 2 || (closed && n < 3)) return null;
+    // Only very sharp turns (doubling back) stay as corners.
+    final nodes = fitNodes(
+      pts,
+      closed: closed,
+      isCorner: (i) => n > 2 && turnAngle(pts[(i - 1 + n) % n], pts[i], pts[(i + 1) % n]) > 2.2 && i > 0 && i < n - 1,
+      tolerance: tolerance,
+    );
+    return nodes.length < 2 ? null : InkPath(nodes: nodes, closed: closed);
+  }
+
   // ---- Flattening ---------------------------------------------------------
 
   /// Each subpath of [shape] as a polygon, with whether it was closed.

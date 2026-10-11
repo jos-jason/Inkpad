@@ -60,6 +60,12 @@ class _EditorPageState extends State<EditorPage> {
   final _star = ShapeTool(ShapeKind.star);
   final _polygon = ShapeTool(ShapeKind.polygon);
   final _line = ShapeTool(ShapeKind.line);
+  final _spiral = ShapeTool(ShapeKind.spiral);
+  final _freehand = FreehandTool(closeShape: true);
+  final _brush = FreehandTool(closeShape: false);
+  final _eraser = EraserTool();
+  final _scissors = ScissorsTool();
+  final _eyedropper = EyedropperTool();
   final _scale = ScaleTool();
   final _rotate = RotateTool();
   final _hand = HandTool();
@@ -69,24 +75,27 @@ class _EditorPageState extends State<EditorPage> {
     PaletteTool('Oval', const Icon(Icons.circle_outlined), _oval, shortcut: 'E'),
     PaletteTool('Star', const Icon(Icons.star_outline), _star, shortcut: 'S'),
     PaletteTool('Polygon', const Icon(Icons.pentagon_outlined), _polygon, shortcut: 'G'),
-    const PaletteTool('Spiral', ToolIcon(ToolIcon.spiral), null),
+    PaletteTool('Spiral', const ToolIcon(ToolIcon.spiral), _spiral),
     PaletteTool('Line', const ToolIcon(ToolIcon.line), _line, shortcut: 'L'),
   ]);
+
+  late final _freehandGroup = PaletteGroup([
+    PaletteTool('Brush', const Icon(Icons.brush), _brush, shortcut: 'B'),
+    PaletteTool('Freehand', const ToolIcon(ToolIcon.blob), _freehand, shortcut: 'F'),
+  ])
+    ..current = 1;
 
   late final List<Object> _palette = [
     PaletteTool('Select', const ToolIcon(ToolIcon.arrow), _select, shortcut: 'V'),
     PaletteTool('Direct Select', const ToolIcon(ToolIcon.directSelect), _direct, shortcut: 'A'),
     PaletteTool('Pen', const ToolIcon(ToolIcon.pen), _pen, shortcut: 'P'),
     PaletteTool('Add/Delete Point', const ToolIcon(ToolIcon.addAnchor), _anchor, shortcut: 'N'),
-    const PaletteTool('Scissors', Icon(Icons.content_cut), null),
-    PaletteGroup(const [
-      PaletteTool('Freehand', ToolIcon(ToolIcon.blob), null),
-      PaletteTool('Brush', Icon(Icons.brush), null),
-    ]),
-    const PaletteTool('Eraser', ToolIcon(ToolIcon.eraser), null),
+    PaletteTool('Scissors', const Icon(Icons.content_cut), _scissors, shortcut: 'C'),
+    _freehandGroup,
+    PaletteTool('Eraser', const ToolIcon(ToolIcon.eraser), _eraser, shortcut: '⇧E'),
     _shapes,
     const PaletteTool('Text', ToolIcon(ToolIcon.text), null),
-    const PaletteTool('Eyedropper', Icon(Icons.colorize), null),
+    PaletteTool('Eyedropper', const Icon(Icons.colorize), _eyedropper, shortcut: 'I'),
     PaletteTool('Scale', const ToolIcon(ToolIcon.scale), _scale, shortcut: 'K'),
     PaletteTool('Rotate', const ToolIcon(ToolIcon.rotate), _rotate, shortcut: 'O'),
   ];
@@ -157,8 +166,10 @@ class _EditorPageState extends State<EditorPage> {
   }
 
   void _setTool(Tool t) {
-    for (final (i, v) in _shapes.variants.indexed) {
-      if (identical(v.tool, t)) _shapes.current = i;
+    for (final group in [_shapes, _freehandGroup]) {
+      for (final (i, v) in group.variants.indexed) {
+        if (identical(v.tool, t)) group.current = i;
+      }
     }
     controller.tool = t;
   }
@@ -180,8 +191,9 @@ class _EditorPageState extends State<EditorPage> {
     };
     final shortcutTools = <String, Tool>{
       'V': _select, 'A': _direct, 'P': _pen, 'N': _anchor, 'R': _rect, 'E': _oval, 'S': _star, 'G': _polygon, 'L': _line,
-      'K': _scale, 'O': _rotate, 'H': _hand,
+      'K': _scale, 'O': _rotate, 'H': _hand, 'C': _scissors, 'B': _brush, 'F': _freehand, 'I': _eyedropper,
     };
+    map[const SingleActivator(LogicalKeyboardKey.keyE, shift: true)] = () => _setTool(_eraser);
     for (final MapEntry(key: letter, value: tool) in shortcutTools.entries) {
       map[SingleActivator(LogicalKeyboardKey(letter.toLowerCase().codeUnitAt(0)))] = () => _setTool(tool);
     }
@@ -556,8 +568,21 @@ class _EditorPageState extends State<EditorPage> {
   /// Options for the current tool (Inkpad's shape tool options).
   Widget _toolOptions() {
     final t = controller.tool;
-    if (t is! ShapeTool || t.kind == ShapeKind.oval || t.kind == ShapeKind.line) return const SizedBox.shrink();
     void update(void Function() change) => setState(change);
+    if (t is EraserTool) {
+      return _optionsPanel([
+        SteppedSlider(
+          label: 'Eraser Size',
+          value: t.size,
+          min: 1,
+          max: 100,
+          step: 1,
+          format: (v) => '${v.round()} pt',
+          onChanged: (v) => update(() => t.size = v.roundToDouble()),
+        ),
+      ]);
+    }
+    if (t is! ShapeTool || t.kind == ShapeKind.oval || t.kind == ShapeKind.line) return const SizedBox.shrink();
     final sliders = switch (t.kind) {
       ShapeKind.rectangle => [
           SteppedSlider(
@@ -590,6 +615,17 @@ class _EditorPageState extends State<EditorPage> {
             onChanged: (v) => update(() => t.starInnerRatio = v.roundToDouble() / 100),
           ),
         ],
+      ShapeKind.spiral => [
+          SteppedSlider(
+            label: 'Decay',
+            value: t.spiralDecay,
+            min: 10,
+            max: 99,
+            step: 1,
+            format: (v) => '${v.round()}%',
+            onChanged: (v) => update(() => t.spiralDecay = v.roundToDouble()),
+          ),
+        ],
       _ => [
           SteppedSlider(
             label: 'Sides',
@@ -602,15 +638,17 @@ class _EditorPageState extends State<EditorPage> {
           ),
         ],
     };
-    return SizedBox(
-      width: 400,
-      child: Pill(
-        radius: 18,
-        padding: const EdgeInsets.fromLTRB(14, 12, 6, 2),
-        child: Column(mainAxisSize: MainAxisSize.min, children: sliders),
-      ),
-    );
+    return _optionsPanel(sliders);
   }
+
+  Widget _optionsPanel(List<Widget> sliders) => SizedBox(
+        width: 400,
+        child: Pill(
+          radius: 18,
+          padding: const EdgeInsets.fromLTRB(14, 12, 6, 2),
+          child: Column(mainAxisSize: MainAxisSize.min, children: sliders),
+        ),
+      );
 }
 
 /// The stroke button: a square outline in the stroke color (a red slash

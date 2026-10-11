@@ -7,7 +7,7 @@ import '../model/element.dart';
 import '../model/geometry.dart';
 import 'tool.dart';
 
-enum ShapeKind { rectangle, oval, star, polygon, line }
+enum ShapeKind { rectangle, oval, star, polygon, spiral, line }
 
 /// Drag out a shape. Ported from WDShapeTool.
 /// Shift constrains proportions (or 45° for lines); Alt draws from the center.
@@ -20,6 +20,9 @@ class ShapeTool extends Tool {
   double starInnerRatio = 0.45;
   int polygonSides = 6;
 
+  /// How quickly a spiral winds in, 10–99%.
+  double spiralDecay = 80;
+
   ShapeTool(this.kind);
 
   @override
@@ -28,6 +31,7 @@ class ShapeTool extends Tool {
         ShapeKind.oval => 'Oval',
         ShapeKind.star => 'Star',
         ShapeKind.polygon => 'Polygon',
+        ShapeKind.spiral => 'Spiral',
         ShapeKind.line => 'Line',
       };
 
@@ -46,7 +50,7 @@ class ShapeTool extends Tool {
     if (_shape == null) {
       c.checkpoint();
       _shape = c.styledPath(built);
-      if (kind == ShapeKind.line) _shape!.fill = null;
+      if (kind == ShapeKind.line || kind == ShapeKind.spiral) _shape!.fill = null;
       c.addElement(_shape!);
       c.select(_shape!);
     } else {
@@ -59,6 +63,8 @@ class ShapeTool extends Tool {
 
   InkPath _build(DrawingController c, ToolEvent e) {
     var end = e.point;
+
+    if (kind == ShapeKind.spiral) return _spiral(_start, end);
 
     if (kind == ShapeKind.line) {
       if (e.shift) {
@@ -83,8 +89,28 @@ class ShapeTool extends Tool {
       ShapeKind.oval => InkPath.oval(rect),
       ShapeKind.star => InkPath.star(rect, starPoints, innerRatio: starInnerRatio),
       ShapeKind.polygon => _polygon(rect, polygonSides),
-      ShapeKind.line => throw StateError('handled above'),
+      ShapeKind.line || ShapeKind.spiral => throw StateError('handled above'),
     };
+  }
+
+  /// A logarithmic spiral from [center] whose outer end is at [end].
+  /// Ported from WDShapeTool's spiral: 20 eighth-turn segments.
+  InkPath _spiral(Offset center, Offset end) {
+    final radius = (end - center).distance;
+    const segments = 20;
+    final b = 1 - spiralDecay / 100;
+    final a = radius / math.exp(b * segments * math.pi / 4);
+    final offsetAngle = math.atan2(end.dy - center.dy, end.dx - center.dx) + math.pi;
+    const deltaT = math.pi / 4 / 3;
+    final nodes = <BezierNode>[];
+    for (var s = 0; s <= segments; s++) {
+      final t = s * math.pi / 4;
+      final f = a * math.exp(b * t);
+      final p = Offset(f * math.cos(t), f * math.sin(t));
+      final d = Offset(a * b * math.exp(b * t) * math.cos(t) - f * math.sin(t), f * math.cos(t) + a * b * math.exp(b * t) * math.sin(t));
+      nodes.add(BezierNode(p - d * deltaT, p, p + d * deltaT));
+    }
+    return InkPath(nodes: nodes)..transform(Affine.rotation(offsetAngle).then(Affine.translation(center.dx, center.dy)));
   }
 
   InkPath _polygon(Rect r, int sides) {
