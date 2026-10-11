@@ -267,6 +267,23 @@ class DrawingController extends ChangeNotifier {
     return paint;
   }
 
+  // ---- Rotate and flip --------------------------------------------------
+
+  /// Rotates the selection about its center; positive is clockwise on screen.
+  void rotateSelection(double degrees) =>
+      _transformAboutCenter((c) => Affine.rotationAbout(c, degrees * math.pi / 180));
+
+  /// Ported from -[WDDrawingController flipHorizontally:] / flipVertically:.
+  void flipSelection({required bool horizontal}) =>
+      _transformAboutCenter((c) => Affine.scaleAbout(c, horizontal ? -1 : 1, horizontal ? 1 : -1));
+
+  void _transformAboutCenter(Affine Function(Offset center) make) {
+    final b = selectionBounds;
+    if (b == null) return;
+    checkpoint();
+    transformSelection(make(b.center));
+  }
+
   // ---- Images -----------------------------------------------------------
 
   /// Places an image file centered on the page, scaled down (never up) to

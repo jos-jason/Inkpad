@@ -43,10 +43,14 @@ Done:
   once per drawing however often they're used, and can be clipped by masks
 - Scale handles: drag a selection corner with the select tool to resize
   (proportional; Shift for free, Alt from the center)
+- Rotation: the knob above a selection (select tool), or the Rotate tool
+  (port of WDRotateTool: tap to move the pivot, drag to rotate; O). Shift
+  snaps to 15°. Rotate 90° left/right and Flip horizontally/vertically
+  (as in Inkpad) in the menu
 - Clipping masks, as in Inkpad: select shapes, then Make clipping mask
   (Ctrl/Cmd+7); the topmost shape clips the rest. Release clipping mask
   (Shift+Ctrl/Cmd+7) puts them back
-- Tools: select / move / node & handle editing, pen, add/delete point
+- Tools: select / move / scale / rotate / node & handle editing, pen, add/delete point
   (Alt-click converts corner/smooth), rectangle, oval, star,
   polygon, line, hand
 - Pan & zoom: pinch, trackpad, ctrl/cmd + scroll wheel, space-drag, middle mouse
@@ -70,18 +74,17 @@ Done:
 - Responsive layout (side panels on desktop/tablet, bottom bar on phones)
 
 To port next (roughly in priority order):
-- Rotation handles (scaling is done)
 - Releasing compound paths; gradient outlines (strokes)
 - Boolean path operations (`WDPathfinder` / livarot). Note: livarot comes from
   Inkscape; check its license before porting it rather than reimplementing.
 - Freehand tool with curve fitting (`CurveFit`), scissors, eraser
-- Rotate tool; text and text-on-path (and SVG text import), shadows, arrowheads, dash patterns UI
+- Text and text-on-path (and SVG text import), shadows, arrowheads, dash patterns UI
 - Snapping (grid, points, edges), rulers, PDF/PNG export
 - Full color picker
 
 ## Keyboard shortcuts
 
-V select · P pen · A add/delete point · R rect · E oval · S star · G polygon · L line · H hand ·
+V select · O rotate · P pen · A add/delete point · R rect · E oval · S star · G polygon · L line · H hand ·
 Ctrl/Cmd+Z undo · Shift+Ctrl/Cmd+Z redo · Ctrl/Cmd+D duplicate ·
 Ctrl/Cmd+G group · Shift+Ctrl/Cmd+G ungroup · Ctrl/Cmd+S save now ·
 Ctrl/Cmd+E export SVG · Ctrl/Cmd+7 make clipping mask ·

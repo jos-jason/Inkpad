@@ -51,6 +51,7 @@ class _EditorPageState extends State<EditorPage> {
     _ToolEntry(ShapeTool(ShapeKind.star), Icons.star_outline, 'S'),
     _ToolEntry(ShapeTool(ShapeKind.polygon), Icons.hexagon_outlined, 'G'),
     _ToolEntry(ShapeTool(ShapeKind.line), Icons.horizontal_rule, 'L'),
+    _ToolEntry(RotateTool(), Icons.rotate_right, 'O'),
     _ToolEntry(HandTool(), Icons.pan_tool_outlined, 'H'),
   ];
 
@@ -259,6 +260,13 @@ class _EditorPageState extends State<EditorPage> {
             PopupMenuItem(enabled: hasSel, value: c.ungroupSelection, child: const Text('Ungroup')),
             PopupMenuItem(enabled: hasSel, value: c.bringToFront, child: const Text('Bring to front')),
             PopupMenuItem(enabled: hasSel, value: c.sendToBack, child: const Text('Send to back')),
+            const PopupMenuDivider(),
+            PopupMenuItem(enabled: hasSel, value: () => c.rotateSelection(-90), child: const Text('Rotate 90° left')),
+            PopupMenuItem(enabled: hasSel, value: () => c.rotateSelection(90), child: const Text('Rotate 90° right')),
+            PopupMenuItem(
+                enabled: hasSel, value: () => c.flipSelection(horizontal: true), child: const Text('Flip horizontally')),
+            PopupMenuItem(
+                enabled: hasSel, value: () => c.flipSelection(horizontal: false), child: const Text('Flip vertically')),
             const PopupMenuDivider(),
             PopupMenuItem(enabled: c.canMakeMask, value: c.makeMask, child: const Text('Make clipping mask')),
             PopupMenuItem(enabled: c.canReleaseMask, value: c.releaseMask, child: const Text('Release clipping mask')),

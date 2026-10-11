@@ -89,6 +89,18 @@ class Affine {
   int get hashCode => Object.hash(a, b, c, d, tx, ty);
 }
 
+/// The angle (radians) swept from [from] to [to] around [pivot], in -π..π.
+double sweptAngle(Offset pivot, Offset from, Offset to) {
+  final a = (to - pivot).direction - (from - pivot).direction;
+  return math.atan2(math.sin(a), math.cos(a));
+}
+
+/// Rounds [radians] to the nearest multiple of [stepDegrees].
+double snapAngle(double radians, double stepDegrees) {
+  final step = stepDegrees * math.pi / 180;
+  return (radians / step).round() * step;
+}
+
 Offset normalize(Offset v) {
   final len = v.distance;
   return len == 0 ? Offset.zero : v / len;

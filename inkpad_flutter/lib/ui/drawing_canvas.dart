@@ -307,6 +307,11 @@ class _CanvasPainter extends CustomPainter {
   /// Corner handles for scaling the selection with the select tool.
   void _paintScaleHandles(Canvas canvas, Rect bounds, double px) {
     final r = 4 * px;
+    // Rotation knob on a short stem above the selection.
+    final knob = SelectionTool.rotationKnob(bounds, scale);
+    canvas.drawLine(bounds.topCenter, knob, Paint()..color = selectionColor..strokeWidth = px);
+    canvas.drawCircle(knob, 5 * px, Paint()..color = Colors.white);
+    canvas.drawCircle(knob, 5 * px, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.5 * px..color = selectionColor);
     for (final h in SelectionTool.scaleHandles(bounds, scale)) {
       final box = Rect.fromCenter(center: h, width: r * 2, height: r * 2);
       canvas.drawRect(box, Paint()..color = selectionColor);

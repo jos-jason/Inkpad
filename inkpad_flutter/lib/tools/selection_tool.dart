@@ -7,9 +7,9 @@ import '../model/geometry.dart';
 import '../model/style.dart';
 import 'tool.dart';
 
-enum _Mode { none, move, anchor, handle, gradientStart, gradientEnd, scale, marquee }
+enum _Mode { none, move, anchor, handle, gradientStart, gradientEnd, scale, rotate, marquee }
 
-/// Selects, moves, scales and node-edits. Combines Inkpad's WDSelectionTool
+/// Selects, moves, scales, rotates and node-edits. Combines Inkpad's WDSelectionTool
 /// behaviour for elements with direct editing of the selected path's nodes.
 class SelectionTool extends Tool {
   @override
@@ -49,6 +49,15 @@ class SelectionTool extends Tool {
       bounds.bottomLeft + Offset(-o, o),
     ];
   }
+
+  /// Screen pixels from the top of the selection to its rotation knob.
+  static const knobOffset = 28.0;
+
+  /// The rotation knob, centered above [bounds].
+  static Offset rotationKnob(Rect bounds, double viewScale) =>
+      bounds.topCenter - Offset(0, knobOffset / viewScale);
+
+  Offset _rotatePivot = Offset.zero;
 
   static List<Offset> _corners(Rect r) => [r.topLeft, r.topRight, r.bottomRight, r.bottomLeft];
 
@@ -98,7 +107,16 @@ class SelectionTool extends Tool {
       }
     }
 
-    // 4. An element.
+    // 4. The rotation knob: rotate about the selection's center.
+    if (bounds != null && c.activePath == null && (rotationKnob(bounds, e.viewScale) - e.point).distance < tol) {
+      _mode = _Mode.rotate;
+      _rotatePivot = bounds.center;
+      _applied = Affine.identity;
+      _grab = e.point;
+      return;
+    }
+
+    // 5. An element.
     final hit = c.elementAt(e.point, tol);
     if (hit != null) {
       if (e.shift && c.selection.contains(hit)) {
@@ -112,7 +130,7 @@ class SelectionTool extends Tool {
       return;
     }
 
-    // 5. Marquee on empty space.
+    // 6. Marquee on empty space.
     if (!e.shift) c.selectNone();
     _baseSelection = {...c.selection};
     _mode = _Mode.marquee;
@@ -175,6 +193,13 @@ class SelectionTool extends Tool {
         _ensureCheckpoint(c);
         final t = _scaleTransform(e);
         // Apply only the change since the last move, so rounding never builds up.
+        c.transformSelection(_applied.inverted().then(t));
+        _applied = t;
+      case _Mode.rotate:
+        _ensureCheckpoint(c);
+        var angle = sweptAngle(_rotatePivot, _grab, e.point);
+        if (e.shift) angle = snapAngle(angle, RotateTool.snapDegrees);
+        final t = Affine.rotationAbout(_rotatePivot, angle);
         c.transformSelection(_applied.inverted().then(t));
         _applied = t;
       case _Mode.marquee:
