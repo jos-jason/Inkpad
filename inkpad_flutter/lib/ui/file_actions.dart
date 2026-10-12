@@ -4,6 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../export/pdf_export.dart';
+import '../export/raster_export.dart';
 import '../model/drawing.dart';
 import '../svg/svg_importer.dart';
 
@@ -19,6 +21,67 @@ String _fileName(String name, String ext) {
 
 Future<void> exportSvg(BuildContext context, InkDrawing drawing, String name) =>
     _save(context, _fileName(name, 'svg'), utf8.encode(drawing.toSvg()), 'image/svg+xml', 'svg');
+
+/// PNG export options, remembered for next time.
+double _pngScale = 2;
+bool _pngTransparent = false;
+
+/// Asks for the size and background, then saves the page as a PNG.
+Future<void> exportPng(BuildContext context, InkDrawing drawing, String name) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) {
+        final px = (drawing.width * _pngScale).round(), py = (drawing.height * _pngScale).round();
+        return AlertDialog(
+          title: const Text('Export PNG'),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SegmentedButton<double>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: 1, label: Text('1×')),
+                ButtonSegment(value: 2, label: Text('2×')),
+                ButtonSegment(value: 3, label: Text('3×')),
+                ButtonSegment(value: 4, label: Text('4×')),
+              ],
+              selected: {_pngScale},
+              onSelectionChanged: (s) => setState(() => _pngScale = s.single),
+            ),
+            const SizedBox(height: 8),
+            Text('$px × $py pixels', style: Theme.of(context).textTheme.bodySmall),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Transparent background'),
+              value: _pngTransparent,
+              onChanged: (v) => setState(() => _pngTransparent = v ?? false),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Export')),
+          ],
+        );
+      },
+    ),
+  );
+  if (ok != true || !context.mounted) return;
+  try {
+    final png = await drawingToPng(drawing, scale: _pngScale, transparent: _pngTransparent);
+    if (context.mounted) await _save(context, _fileName(name, 'png'), png, 'image/png', 'png');
+  } catch (e) {
+    if (context.mounted) showSnack(context, 'Could not make the PNG: $e');
+  }
+}
+
+/// Saves the page as a vector PDF.
+Future<void> exportPdf(BuildContext context, InkDrawing drawing, String name) async {
+  try {
+    final pdf = await drawingToPdf(drawing);
+    if (context.mounted) await _save(context, _fileName(name, 'pdf'), pdf, 'application/pdf', 'pdf');
+  } catch (e) {
+    if (context.mounted) showSnack(context, 'Could not make the PDF: $e');
+  }
+}
 
 Future<void> exportInkpad(BuildContext context, InkDrawing drawing, String name) => _save(
     context, _fileName(name, inkpadExtension), utf8.encode(drawing.encode()), 'application/json', inkpadExtension);

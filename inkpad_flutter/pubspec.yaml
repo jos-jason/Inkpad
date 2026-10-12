@@ -41,6 +41,8 @@ dependencies:
   crypto: ^3.0.7
   clipper2: ^0.0.3
   glyph_path: ^2.0.1
+  pdf: ^3.13.1
+  vector_math: ^2.4.3
 
 dev_dependencies:
   flutter_test:

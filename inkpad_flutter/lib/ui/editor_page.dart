@@ -543,6 +543,8 @@ class _EditorPageState extends State<EditorPage> {
 
   List<MenuEntry> _shareMenu() => [
         MenuAction('Export SVG…', () => exportSvg(context, controller.drawing, widget.info.name)),
+        MenuAction('Export PNG…', () => exportPng(context, controller.drawing, widget.info.name)),
+        MenuAction('Export PDF…', () => exportPdf(context, controller.drawing, widget.info.name)),
         MenuAction('Export .inkpad…', () => exportInkpad(context, controller.drawing, widget.info.name)),
         MenuAction('Copy SVG', () => copySvg(context, controller.drawing)),
       ];

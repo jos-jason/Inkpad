@@ -35,8 +35,14 @@ List<Offset> _dedupe(List<Offset> pts) {
 void _fit(List<Offset> d, int first, int last, Offset t1, Offset t2, double error, List<Cubic> out, int depth) {
   final count = last - first + 1;
   if (count == 2 || depth > 32) {
-    final dist = (d[last] - d[first]).distance / 3;
-    out.add((d[first], d[first] + t1 * dist, d[last] + t2 * dist, d[last]));
+    final chord = d[last] - d[first];
+    final dist = chord.distance / 3;
+    // Two points are a straight edge unless the neighbours' directions
+    // nearly agree with it (then keep the join smooth).
+    final along = dist == 0 ? Offset.zero : chord / chord.distance;
+    final aligned = _dot(t1, along) > 0.95 && _dot(t2, -along) > 0.95;
+    final a = aligned ? t1 : along, b = aligned ? t2 : -along;
+    out.add((d[first], d[first] + a * dist, d[last] + b * dist, d[last]));
     return;
   }
 
@@ -117,6 +123,18 @@ Cubic _generate(List<Offset> d, int first, int last, List<double> u, Offset t1, 
     if (dist >= maxDist) {
       maxDist = dist;
       split = i;
+    }
+  }
+  // Also halfway along each edge: a long straight edge has no points in
+  // between, so a curve could bulge away from it unnoticed.
+  for (var i = first; i < last; i++) {
+    final mid = (d[i] + d[i + 1]) / 2;
+    final t = _newton(b, mid, (u[i - first] + u[i + 1 - first]) / 2).clamp(0.0, 1.0);
+    final diff = _bezierAt(b, t) - mid;
+    final dist = _dot(diff, diff);
+    if (dist > maxDist) {
+      maxDist = dist;
+      split = i > first ? i : i + 1;
     }
   }
   return (maxDist, split.clamp(first + 1, last - 1));

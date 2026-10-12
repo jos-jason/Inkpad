@@ -126,4 +126,21 @@ void main() {
     expect(p.nodes.length, 8);
     expect(p.toFlutterPath().getBounds(), before);
   });
+
+  test('outlining a straight round-capped line keeps it straight', () {
+    for (final cap in LineCap.values) {
+      final line = InkPath(
+        nodes: [const BezierNode.anchor(Offset(10, 120)), const BezierNode.anchor(Offset(150, 120))],
+        stroke: StrokeStyle(width: 4, cap: cap),
+      );
+      final o = Pathfinder.outlineStroke(line)!;
+      // Every point on the outline stays within the stroke's reach.
+      for (final seg in (o as InkPath).segments) {
+        for (var t = 0.0; t <= 1; t += 0.05) {
+          expect((seg.pointAt(t).dy - 120).abs(), lessThan(2.2), reason: '$cap');
+        }
+      }
+    }
+  });
 }
+

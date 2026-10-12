@@ -84,6 +84,20 @@ class ImageData {
     return (bytes.getUint8(i) / 255, bytes.getUint8(i + 1) / 255, bytes.getUint8(i + 2) / 255, bytes.getUint8(i + 3) / 255);
   }
 
+  /// Waits until the display image is decoded (or failed).
+  Future<ui.Image?> ensureDecoded() async {
+    while (decoded == null && !decodeFailed) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    return _decoded;
+  }
+
+  /// The image at its full resolution, for export.
+  Future<ui.Image> fullResolution() async {
+    final codec = await ui.instantiateImageCodec(bytes);
+    return (await codec.getNextFrame()).image;
+  }
+
   Future<void> _decode() async {
     _decoding = true;
     try {

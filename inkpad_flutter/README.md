@@ -133,6 +133,12 @@ Done:
   Drawings autosave as you edit. Stored as `.inkpad` files in the app's
   support folder (browser storage on the web).
 - SVG and `.inkpad` export, copy SVG to clipboard
+- PNG export (1×–4×, white or transparent background) and vector PDF export
+  (Share menu). The PDF keeps shapes, outlines, dashes, arrowheads,
+  gradients, clipping masks, opacity and blend modes as vectors and embeds
+  images at full resolution; text is drawn as letter shapes, shadows as
+  images. Approximated: group opacity applies per member, reflected or
+  repeated gradients pad, see-through gradient stops use one opacity
 - SVG import (`lib/svg/`): paths (all commands incl. arcs), basic shapes,
   groups, `use`/`symbol`, transforms, inherited styles, CSS `<style>` rules
   (tag, class, id, descendant and child selectors), fill rules, units.
@@ -151,7 +157,6 @@ To port next (roughly in priority order; greyed out in the UI):
 - AI edit (placeholder button for now)
 - Per-letter styling (mixed fonts/colors within one text)
 - Releasing compound paths; gradient outlines (strokes)
-- PDF/PNG export
 - Full color picker
 
 ## Keyboard shortcuts
@@ -173,6 +178,7 @@ center or breaks handle symmetry.
   and offsetting) — Boost Software License 1.0
 - [glyph_path](https://pub.dev/packages/glyph_path) (reading TrueType/OpenType
   outlines, kerning and ligatures) — BSD 3-Clause
+- [pdf](https://pub.dev/packages/pdf) (writing PDF files) — Apache License 2.0
 - [Lato](https://fonts.google.com/specimen/Lato) (bundled fallback font) —
   SIL Open Font License 1.1 (`assets/fonts/Lato-OFL.txt`)
 
