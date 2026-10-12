@@ -107,16 +107,19 @@ class _PdfWriter {
     final contours = _contours(e);
     if (contours.isEmpty) return;
     final evenOdd = e.fillRule == FillRule.evenOdd;
-    final fill = e.fill;
-    if (fill is InkColor) {
-      g.saveContext();
-      _state(fill.alpha * a, 1, mode);
-      g.setFillColor(_color(fill));
-      _addPaths(contours);
-      g.fillPath(evenOdd: evenOdd);
-      g.restoreContext();
-    } else if (fill is InkGradient) {
-      _gradient(fill, e.bounds, contours, evenOdd, a, mode);
+    // Text may have letters in their own colors.
+    final groups = e is InkTypography ? e.paintGroups : [(e.fill, contours)];
+    for (final (fill, paths) in groups) {
+      if (fill is InkColor) {
+        g.saveContext();
+        _state(fill.alpha * a, 1, mode);
+        g.setFillColor(_color(fill));
+        _addPaths(paths);
+        g.fillPath(evenOdd: evenOdd);
+        g.restoreContext();
+      } else if (fill is InkGradient) {
+        _gradient(fill, e.bounds, paths, evenOdd, a, mode);
+      }
     }
     if (e.isMasking) {
       g.saveContext();

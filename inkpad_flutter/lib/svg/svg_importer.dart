@@ -825,31 +825,96 @@ class _SvgImporter {
     final textPath = e.childElements.where((c) => c.name.local == 'textPath').firstOrNull;
     if (textPath != null) return _textOnPath(e, textPath, context, family, fontStyle, size, preserve);
 
+    // Letters styled differently from the text (nested tspans): what they
+    // change from the text's own font, size and fill.
+    TextRunStyle styleFor(Map<String, String> inh) {
+      if (identical(inh, style)) return TextRunStyle.plain;
+      final fam = inh['font-family'] == style['font-family'] ? family : _fontFamily(inh['font-family']);
+      final sameStyle = fam == family && inh['font-weight'] == style['font-weight'] && inh['font-style'] == style['font-style'];
+      final st = sameStyle ? fontStyle : _fontStyle(fam, inh['font-weight'], inh['font-style']);
+      final sz = inh['font-size'] == style['font-size'] ? size : parseLength(inh['font-size'], percentOf: _viewDiagonal) ?? size;
+      final sameFill = inh['fill'] == style['fill'] && inh['fill-opacity'] == style['fill-opacity'] && inh['color'] == style['color'];
+      final fill = sameFill ? null : _resolvePaint(inh['fill'] ?? 'black', inh['fill-opacity'], inh['color']);
+      return TextRunStyle(
+        fontFamily: fam == family ? null : fam,
+        fontStyle: st == fontStyle ? null : st,
+        fontSize: sz == size ? null : sz,
+        fill: fill,
+      );
+    }
+
     // Lines: a tspan with its own y starts a new line.
-    final lines = <String>[];
-    var current = StringBuffer();
+    final lines = <List<(String, TextRunStyle)>>[];
+    var current = <(String, TextRunStyle)>[];
     Offset? anchor;
     double? lastY;
-    void visit(XmlNode n) {
+    void visit(XmlNode n, Map<String, String> inherited) {
       if (n is XmlText || n is XmlCDATA) {
-        current.write(n.value);
+        current.add((n.value ?? '', styleFor(inherited)));
       } else if (n is XmlElement && n.name.local == 'tspan') {
+        final (inh, own) = _computeStyle(n, inherited);
+        if (own['display'] == 'none') return;
         final y = parseNumberList(n.getAttribute('y')).firstOrNull;
         final x = parseNumberList(n.getAttribute('x')).firstOrNull;
-        if (y != null && lastY != null && y != lastY && current.isNotEmpty) {
-          lines.add(current.toString());
-          current = StringBuffer();
+        if (y != null && lastY != null && y != lastY && current.any((p) => p.$1.isNotEmpty)) {
+          lines.add(current);
+          current = [];
         }
         if (y != null) lastY = y;
         anchor ??= (x != null || y != null) ? Offset(x ?? 0, y ?? 0) : null;
-        n.children.forEach(visit);
+        for (final c in n.children) {
+          visit(c, inh);
+        }
       }
     }
 
-    e.children.forEach(visit);
-    lines.add(current.toString());
-    final text = [for (final l in lines) preserve ? l.replaceAll('\n', ' ') : l.replaceAll(RegExp(r'\s+'), ' ').trim()]
-        .join('\n');
+    for (final c in e.children) {
+      visit(c, style);
+    }
+    lines.add(current);
+
+    // Whitespace as SVG treats it: kept with xml:space="preserve", else
+    // runs of it become one space and lines are trimmed.
+    List<TextRun> lineRuns(List<(String, TextRunStyle)> pieces) {
+      if (preserve) return [for (final (t, st) in pieces) TextRun(t.replaceAll('\n', ' '), st)];
+      final out = <TextRun>[];
+      var lastSpace = true;
+      for (final (t, st) in pieces) {
+        final b = StringBuffer();
+        for (final ch in t.split('')) {
+          if (ch.trim().isEmpty) {
+            if (!lastSpace) b.write(' ');
+            lastSpace = true;
+          } else {
+            b.write(ch);
+            lastSpace = false;
+          }
+        }
+        out.add(TextRun(b.toString(), st));
+      }
+      // Trailing space.
+      for (var i = out.length - 1; i >= 0; i--) {
+        if (out[i].text.isEmpty) continue;
+        if (out[i].text.endsWith(' ')) out[i] = TextRun(out[i].text.substring(0, out[i].text.length - 1), out[i].style);
+        break;
+      }
+      return out;
+    }
+
+    final runs = <TextRun>[];
+    for (final (i, l) in lines.indexed) {
+      if (i > 0) runs.add(TextRun('\n', runs.isEmpty ? TextRunStyle.plain : runs.last.style));
+      runs.addAll(lineRuns(l));
+    }
+    var styled = runs.normalized();
+    // Inkpad's own files say exactly how letters were styled.
+    final saved = _attrLocal(e, 'runs');
+    if (saved != null) {
+      try {
+        styled = [for (final r in jsonDecode(saved) as List) TextRun.fromJson(r)];
+      } catch (_) {}
+    }
+    final text = styled.plainText;
     if (text.trim().isEmpty) return null;
 
     final ownX = parseNumberList(e.getAttribute('x')).firstOrNull;
@@ -861,13 +926,22 @@ class _SvgImporter {
     if (width != null && e.getAttribute('inkpad:width') != null) {
       // Inkpad's own area text: the transform places the box's corner.
       final align = TextAlignment.values.asNameMap()[_attrLocal(e, 'align')] ?? TextAlignment.left;
-      final typed = _attrLocal(e, 'text') ?? text;
-      t = InkText(text: typed, fontFamily: family, fontStyle: fontStyle, fontSize: size, alignment: align, width: width, placement: context.ctm);
+      final typed = _attrLocal(e, 'text');
+      t = InkText(
+        runs: saved != null || typed == null ? styled : null,
+        text: typed ?? text,
+        fontFamily: family,
+        fontStyle: fontStyle,
+        fontSize: size,
+        alignment: align,
+        width: width,
+        placement: context.ctm,
+      );
     } else {
       final align = switch (style['text-anchor']) { 'middle' => TextAlignment.center, 'end' => TextAlignment.right, _ => TextAlignment.left };
       final at = anchor ?? Offset.zero;
       t = InkText(
-        text: text,
+        runs: styled,
         fontFamily: family,
         fontStyle: fontStyle,
         fontSize: size,

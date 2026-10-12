@@ -87,6 +87,7 @@ class DrawingController extends ChangeNotifier {
 
   void _restore(String snapshot) {
     editingText = null;
+    editingRange = null;
     drawing = InkDrawing.decode(snapshot);
     selection.clear();
     selectedNodes.clear();
@@ -349,9 +350,18 @@ class DrawingController extends ChangeNotifier {
   void applyStyleToSelection({bool fill = false, bool stroke = false, bool record = true}) {
     if (selection.isEmpty) return;
     if (record) checkpoint();
+    // Letters selected while typing: color just those.
+    final t = editingText, range = editingRange;
+    if (fill && t is InkText && range != null && !range.isCollapsed) {
+      t.runs = t.runs.restyle(range.start, range.end, (st) => _simplified(t, TextRunStyle(fill: fillPaint), st));
+      notifyListeners();
+      return;
+    }
     void apply(InkElement e) {
       if (e is InkStylable) {
         if (fill) e.fill = _fillFor(e.fill, fillPaint);
+        // The whole text in one color again.
+        if (fill && e is InkText) e.runs = e.runs.restyleAll((st) => st.without(fill: true));
         if (stroke) e.stroke = strokeStyle;
       } else if (e is InkGroup) {
         e.elements.forEach(apply);
@@ -635,6 +645,40 @@ class DrawingController extends ChangeNotifier {
   /// The text being typed into, if any.
   InkStylable? editingText;
 
+  /// The letters selected while typing (null or collapsed: none). Font,
+  /// size and color changes then apply to just these letters.
+  TextRange? editingRange;
+
+  /// Called as the selection in the text being typed changes: the panels
+  /// show the style of the selected letters.
+  void setEditingRange(TextRange range) {
+    if (range == editingRange) return;
+    editingRange = range;
+    final t = editingText;
+    if (t is InkText && range.isValid && !range.isCollapsed) {
+      final st = t.runs.styleAt(range.start);
+      fontFamily = t.familyOf(st);
+      fontStyle = t.styleOf(st);
+      fontSize = t.sizeOf(st);
+      fillPaint = st.fill ?? t.fill;
+    } else if (t != null) {
+      adoptTextStyle(t);
+      fillPaint = t.fill;
+    }
+    notifyListeners();
+  }
+
+  /// [st] changed by [change], minus settings that match the text's own.
+  static TextRunStyle _simplified(InkText t, TextRunStyle change, TextRunStyle st) {
+    final m = st.merge(change);
+    return TextRunStyle(
+      fontFamily: m.fontFamily == t.fontFamily ? null : m.fontFamily,
+      fontStyle: m.fontStyle == t.fontStyle ? null : m.fontStyle,
+      fontSize: m.fontSize == t.fontSize ? null : m.fontSize,
+      fill: m.fill == t.fill ? null : m.fill,
+    );
+  }
+
   /// Selected text objects and text on paths.
   List<InkStylable> get selectedTexts => [for (final e in selection) if (e is InkText || e is InkTextPath) e as InkStylable];
 
@@ -662,6 +706,7 @@ class DrawingController extends ChangeNotifier {
       ..clear()
       ..add(t);
     editingText = t;
+    editingRange = null;
     notifyListeners();
     return t;
   }
@@ -674,6 +719,7 @@ class DrawingController extends ChangeNotifier {
       ..clear()
       ..add(t);
     editingText = t;
+    editingRange = null;
     notifyListeners();
   }
 
@@ -689,6 +735,7 @@ class DrawingController extends ChangeNotifier {
     final t = editingText;
     if (t == null) return;
     editingText = null;
+    editingRange = null;
     final text = t is InkText ? t.text : (t as InkTextPath).text;
     if (text.trim().isEmpty) {
       for (final l in drawing.layers) {
@@ -713,6 +760,21 @@ class DrawingController extends ChangeNotifier {
     }
     if (size != null) fontSize = size;
     if (alignment != null) textAlignment = alignment;
+    // Letters selected while typing: restyle just those (alignment is for
+    // the whole text).
+    final editing = editingText, range = editingRange;
+    if (editing is InkText && range != null && !range.isCollapsed && (family != null || style != null || size != null)) {
+      if (record) checkpoint();
+      final change = TextRunStyle(
+        fontFamily: family != null || style != null ? fontFamily : null,
+        fontStyle: family != null || style != null ? fontStyle : null,
+        fontSize: size,
+      );
+      editing.runs = editing.runs.restyle(range.start, range.end, (st) => _simplified(editing, change, st));
+      if (alignment != null) editing.alignment = alignment;
+      notifyListeners();
+      return;
+    }
     final texts = selectedTexts;
     if (texts.isNotEmpty) {
       if (record) checkpoint();
@@ -724,6 +786,8 @@ class DrawingController extends ChangeNotifier {
           }
           if (size != null) t.fontSize = size;
           if (alignment != null) t.alignment = alignment;
+          // The whole text takes the change, letters with their own included.
+          t.runs = t.runs.restyleAll((st) => st.without(family: family != null || style != null, style: family != null || style != null, size: size != null));
         } else if (t is InkTextPath) {
           if (family != null || style != null) {
             t.fontFamily = fontFamily;
@@ -762,13 +826,18 @@ class DrawingController extends ChangeNotifier {
     for (final t in selectedTexts) {
       final layer = layerOf(t);
       if (layer == null) continue;
-      final shapes = (t as InkTypography).outlines;
-      if (shapes.isEmpty) continue;
-      final outline = InkCompoundPath(
-        [for (final p in shapes) InkPath(nodes: List.of(p.nodes), closed: true)],
-        fill: t.fill,
-        stroke: t.stroke,
-      )..copyEffects(t);
+      final typo = t as InkTypography;
+      if (typo.outlines.isEmpty) continue;
+      // One compound path per color (letters with their own color apart).
+      final parts = [
+        for (final (paint, shapes) in typo.paintGroups)
+          InkCompoundPath(
+            [for (final p in shapes) InkPath(nodes: List.of(p.nodes), closed: true)],
+            fill: paint,
+            stroke: t.stroke,
+          ),
+      ];
+      final InkElement outline = parts.length == 1 ? (parts.single..copyEffects(t)) : (InkGroup(parts)..copyEffects(t));
       layer.elements[layer.elements.indexOf(t)] = outline;
       results.add(outline);
     }

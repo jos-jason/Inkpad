@@ -1,13 +1,17 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:glyph_path/glyph_path.dart' as gp;
 
 import '../text/font_library.dart';
+import '../text/rich_layout.dart';
 import 'bezier_node.dart';
 import 'element.dart';
 import 'geometry.dart';
 import 'style.dart';
+
+export 'text_runs.dart';
 
 enum TextAlignment { left, center, right }
 
@@ -31,23 +35,68 @@ mixin InkTypography on InkStylable {
   // Outline cache, rebuilt when anything that affects it changes.
   Object? _cacheKey;
   List<InkPath> _outlines = const [];
+  List<InkPaint?>? _outlineFills;
   Rect _layoutBox = Rect.zero;
 
   Object get _layoutKey;
 
-  /// Glyph outlines in document space, plus the layout box in text space.
-  (List<InkPath>, Rect) buildOutlines();
+  /// Glyph outlines in document space, the layout box in text space, and
+  /// each outline's own fill where letters are colored differently (null:
+  /// all in the text's fill).
+  (List<InkPath>, Rect, List<InkPaint?>?) buildOutlines();
 
   List<InkPath> get outlines {
     final f = face;
     final key = (_layoutKey, identityHashCode(f));
     if (key != _cacheKey) {
-      final (paths, box) = buildOutlines();
+      final (paths, box, fills) = buildOutlines();
       _outlines = paths;
       _layoutBox = box;
+      _outlineFills = fills;
       _cacheKey = key;
     }
     return _outlines;
+  }
+
+  /// The letters grouped by fill (one group unless letters have their own
+  /// colors).
+  List<(InkPaint?, List<InkPath>)> get paintGroups {
+    final paths = outlines;
+    final fills = _outlineFills;
+    if (fills == null) return [(fill, paths)];
+    final groups = <(InkPaint?, List<InkPath>)>[];
+    for (final (i, p) in paths.indexed) {
+      final f = fills[i] ?? fill;
+      final at = groups.indexWhere((g) => g.$1 == f);
+      if (at < 0) {
+        groups.add((f, [p]));
+      } else {
+        groups[at].$2.add(p);
+      }
+    }
+    return groups;
+  }
+
+  /// Draws letter groups in their own fills (when there are several).
+  @override
+  void renderElement(Canvas canvas) {
+    outlines; // lays out (and finds the fills)
+    if (_outlineFills == null || isMasking || isEmpty) return super.renderElement(canvas);
+    for (final (f, paths) in paintGroups) {
+      final paint = paintFor(f, opacity);
+      if (paint == null) continue;
+      final p = Path();
+      for (final o in paths) {
+        o.addTo(p);
+      }
+      canvas.drawPath(p, paint);
+    }
+    final sp = strokePaint(opacity);
+    if (sp != null) {
+      final s = stroke!;
+      final path = toFlutterPath();
+      canvas.drawPath(s.dashPattern.isEmpty ? path : dashPath(path, s.dashPattern), sp);
+    }
   }
 
   Rect get layoutBox {
@@ -76,13 +125,18 @@ mixin InkTypography on InkStylable {
   String get svgPathData => outlines.map((p) => p.svgPathData).join();
 
   /// The SVG font attributes for this text.
-  String svgFontAttrs() {
-    final info = FontLibrary.instance.find(fontFamily, fontStyle);
-    final weight = info?.weight ?? (fontStyle.toLowerCase().contains('bold') ? 700 : 400);
-    final italic = info?.italic ?? fontStyle.toLowerCase().contains('italic');
-    return 'font-family="${_xml(fontFamily)}" font-size="${fmt(fontSize)}"'
-        '${weight != 400 ? ' font-weight="$weight"' : ''}${italic ? ' font-style="italic"' : ''}';
-  }
+  String svgFontAttrs() => _fontAttrs(fontFamily, fontStyle, fontSize);
+}
+
+/// SVG font attributes for a family, style and size. [explicit] spells out
+/// normal weight and style too (for letters inside differently styled text).
+String _fontAttrs(String family, String style, double size, {bool explicit = false}) {
+  final info = FontLibrary.instance.find(family, style);
+  final weight = info?.weight ?? (style.toLowerCase().contains('bold') ? 700 : 400);
+  final italic = info?.italic ?? style.toLowerCase().contains('italic');
+  return 'font-family="${_xml(family)}" font-size="${fmt(size)}"'
+      '${weight != 400 ? ' font-weight="$weight"' : explicit ? ' font-weight="normal"' : ''}'
+      '${italic ? ' font-style="italic"' : explicit ? ' font-style="normal"' : ''}';
 }
 
 /// Converts glyph_path commands (glyph space, y up) into closed paths, via
@@ -136,9 +190,12 @@ List<InkPath> _contoursToPaths(List<gp.PathCommand> commands, Offset Function(do
 ///    corner (Inkpad's text);
 ///  * with no width, point text that doesn't wrap, placed by the start of its
 ///    first baseline (how SVG text works; made by clicking with the text tool).
+///
+/// Beyond Inkpad, letters can have their own font, style, size and fill:
+/// the text is a list of [runs], each overriding the text's own settings.
 class InkText extends InkStylable with InkTypography {
-  @override
-  String text;
+  /// The text in stretches of one style each.
+  List<TextRun> runs;
   @override
   String fontFamily;
   @override
@@ -152,7 +209,8 @@ class InkText extends InkStylable with InkTypography {
   Affine placement;
 
   InkText({
-    required this.text,
+    String text = '',
+    List<TextRun>? runs,
     required this.fontFamily,
     this.fontStyle = 'Regular',
     this.fontSize = FontLibrary.defaultSize,
@@ -162,79 +220,114 @@ class InkText extends InkStylable with InkTypography {
     super.fill,
     super.stroke,
     super.opacity,
-  });
+  }) : runs = runs ?? [TextRun(text)];
 
   static const minimumWidth = 20.0; // Inkpad's kMinWidth
 
   @override
-  Object get _layoutKey => (text, fontFamily, fontStyle, fontSize, alignment, width, placement);
+  String get text => runs.plainText;
 
-  /// Lines of text with their baseline and left edge in text space.
-  List<({String text, double x, double baseline, double width})> get lines {
-    final (layout, scale) = _layout();
-    final asc = face.font.ascender * scale;
-    final firstBaseline = width == null ? 0.0 : asc;
+  /// Replacing the text keeps the styles of the letters that stay; new
+  /// letters take the style of the letter before them.
+  set text(String value) => runs = runs.edited(value);
+
+  /// Whether any letters are styled differently from the rest.
+  bool get isStyled => runs.isStyled;
+
+  String familyOf(TextRunStyle s) => s.fontFamily ?? fontFamily;
+  String styleOf(TextRunStyle s) => s.fontStyle ?? fontStyle;
+  double sizeOf(TextRunStyle s) => s.fontSize ?? fontSize;
+
+  LoadedFace _faceOf(TextRunStyle s) {
+    if (s.fontFamily == null && s.fontStyle == null) return face;
+    final lib = FontLibrary.instance;
+    return lib.face(familyOf(s), styleOf(s)) ?? lib.fallback;
+  }
+
+  @override
+  Object get _layoutKey => (
+        Object.hashAll(runs),
+        // Fonts of styled letters, which may finish loading later.
+        Object.hashAll([for (final r in runs) identityHashCode(_faceOf(r.style))]),
+        fontFamily,
+        fontStyle,
+        fontSize,
+        alignment,
+        width,
+        placement,
+      );
+
+  List<LaidLine> _layout() => layoutRuns(
+        [for (final r in runs) LayoutRun(r.text, _faceOf(r.style).font, sizeOf(r.style).clamp(0.1, 10000))],
+        maxWidth: width,
+      );
+
+  /// The first baseline: at the top line's ascent for area text, at the
+  /// anchor for point text.
+  double _firstBaseline(List<LaidLine> lines) => width == null ? 0.0 : lines.first.ascent;
+
+  /// Lines of text with their baseline and left edge in text space, and
+  /// their text in stretches of one run each.
+  List<({String text, double x, double baseline, double width, List<({int run, String text})> segments})> get lines {
+    final laid = _layout();
+    final first = _firstBaseline(laid);
     return [
-      for (final l in layout.lines)
+      for (final l in laid)
         (
-          text: l.glyphs.map((g) => g.sourceText).join(),
+          text: l.glyphs.map((g) => g.glyph.sourceText).join(),
           x: _lineX(l),
-          baseline: firstBaseline + l.baselineY,
-          width: l.lineWidth,
+          baseline: first + l.baseline,
+          width: l.width,
+          segments: l.segments,
         ),
     ];
   }
 
-  (gp.TextLayoutResult, double) _layout() {
-    final f = face.font;
-    final layout = gp.TextLayout(f).layout(
-      text,
-      fontSize: fontSize.clamp(0.1, 10000),
-      maxWidth: width,
-      alignment: switch (alignment) {
-        TextAlignment.left => gp.TextAlign.left,
-        TextAlignment.center => gp.TextAlign.center,
-        TextAlignment.right => gp.TextAlign.right,
-      },
-    );
-    return (layout, fontSize / f.unitsPerEm);
-  }
-
-  /// A line's left edge: from the box's alignment for area text, or around
-  /// the anchor point for point text.
-  double _lineX(gp.TextLineResult l) {
-    if (width != null) return l.alignmentOffset;
+  /// A line's left edge: across the box for area text, or around the
+  /// anchor point for point text.
+  double _lineX(LaidLine l) {
+    final w = width;
+    if (w != null) {
+      return switch (alignment) {
+        TextAlignment.left => 0,
+        TextAlignment.center => (w - l.width) / 2,
+        TextAlignment.right => w - l.width,
+      };
+    }
     return switch (alignment) {
       TextAlignment.left => 0,
-      TextAlignment.center => -l.lineWidth / 2,
-      TextAlignment.right => -l.lineWidth,
+      TextAlignment.center => -l.width / 2,
+      TextAlignment.right => -l.width,
     };
   }
 
   @override
-  (List<InkPath>, Rect) buildOutlines() {
-    if (text.isEmpty) return (const <InkPath>[], _emptyBox());
-    final (layout, scale) = _layout();
-    final f = face.font;
-    final asc = f.ascender * scale, desc = f.descender * scale;
-    final firstBaseline = width == null ? 0.0 : asc;
+  (List<InkPath>, Rect, List<InkPaint?>?) buildOutlines() {
+    if (text.isEmpty) return (const <InkPath>[], _emptyBox(), null);
+    final laid = _layout();
+    final firstBaseline = _firstBaseline(laid);
+    final styledFills = runs.any((r) => r.style.fill != null);
     final paths = <InkPath>[];
+    final fills = <InkPaint?>[];
     var minX = double.infinity, maxX = -double.infinity;
-    for (final line in layout.lines) {
-      final baseline = firstBaseline + line.baselineY;
+    for (final line in laid) {
+      final baseline = firstBaseline + line.baseline;
       final x0 = _lineX(line);
       minX = math.min(minX, x0);
-      maxX = math.max(maxX, x0 + line.lineWidth);
+      maxX = math.max(maxX, x0 + line.width);
       for (final g in line.glyphs) {
-        final gx = x0 + g.positionX;
-        paths.addAll(_contoursToPaths(g.commands, (x, y) => placement.apply(Offset(gx + x, baseline - y))));
+        final gx = x0 + g.x;
+        final glyphPaths = _contoursToPaths(g.glyph.commands, (x, y) => placement.apply(Offset(gx + x, baseline - y)));
+        paths.addAll(glyphPaths);
+        if (styledFills) fills.addAll(List.filled(glyphPaths.length, runs[g.run].style.fill));
       }
     }
-    final lastBaseline = firstBaseline + (layout.lines.isEmpty ? 0 : layout.lines.last.baselineY);
+    final top = firstBaseline - laid.first.ascent;
+    final bottom = firstBaseline + laid.last.baseline + laid.last.descent;
     final box = width != null
-        ? Rect.fromLTRB(0, 0, width!, lastBaseline - desc)
-        : Rect.fromLTRB(minX.isFinite ? minX : 0, -asc, maxX.isFinite ? maxX : 0, lastBaseline - desc);
-    return (paths, box);
+        ? Rect.fromLTRB(0, 0, width!, bottom)
+        : Rect.fromLTRB(minX.isFinite ? minX : 0, top, maxX.isFinite ? maxX : 0, bottom);
+    return (paths, box, styledFills ? fills : null);
   }
 
   Rect _emptyBox() {
@@ -266,21 +359,20 @@ class InkText extends InkStylable with InkTypography {
   @override
   void transformGeometry(Affine t) => placement = placement.then(t);
 
+  /// SVG paint attributes for a fill.
+  static String _fillAttrs(SvgWriter w, InkPaint? f, Rect bounds) => switch (f) {
+        InkGradient g => ' fill="url(#${w.gradient(g, bounds)})"',
+        InkColor c => ' fill="${c.hexValue}"${c.alpha != 1 ? ' fill-opacity="${fmt(c.alpha)}"' : ''}',
+        _ => ' fill="none"',
+      };
+
   @override
   String elementSvg(SvgWriter w) {
     if (isMasking) return super.elementSvg(w); // masks export as outlines + clip
     final t = placement;
     final attrs = StringBuffer(' transform="matrix(${[t.a, t.b, t.c, t.d, t.tx, t.ty].map(fmt).join(' ')})"');
     attrs.write(' ${svgFontAttrs()}');
-    final f = fill;
-    if (f is InkGradient) {
-      attrs.write(' fill="url(#${w.gradient(f, bounds)})"');
-    } else if (f is InkColor) {
-      attrs.write(' fill="${f.hexValue}"');
-      if (f.alpha != 1) attrs.write(' fill-opacity="${fmt(f.alpha)}"');
-    } else {
-      attrs.write(' fill="none"');
-    }
+    attrs.write(_fillAttrs(w, fill, bounds));
     final s = stroke;
     if (s != null && s.willRender) {
       for (final e in w.strokeAttributes(s, bounds).entries) {
@@ -295,10 +387,25 @@ class InkText extends InkStylable with InkTypography {
       attrs.write(' inkpad:width="${fmt(width!)}" inkpad:align="${alignment.name}"');
       attrs.write(' inkpad:text="${_xml(text).replaceAll('\n', '&#10;')}"');
     }
+    if (isStyled) {
+      // The letters' styles, exactly, for reading the file back.
+      attrs.write(" inkpad:runs='${_xml(jsonEncode([for (final r in runs) r.toJson()])).replaceAll("'", '&apos;')}'");
+    }
     attrs.write(' xml:space="preserve"');
+    String segment(({int run, String text}) seg) {
+      final st = runs[seg.run].style;
+      if (st.isPlain) return _xml(seg.text);
+      final a = StringBuffer();
+      if (st.fontFamily != null || st.fontStyle != null || st.fontSize != null) {
+        a.write(' ${_fontAttrs(familyOf(st), styleOf(st), sizeOf(st), explicit: true)}');
+      }
+      if (st.fill != null) a.write(_fillAttrs(w, st.fill, bounds));
+      return '<tspan$a>${_xml(seg.text)}</tspan>';
+    }
+
     final spans = [
       for (final l in lines)
-        '<tspan x="${fmt(width != null ? l.x : 0)}" y="${fmt(l.baseline)}">${_xml(l.text)}</tspan>',
+        '<tspan x="${fmt(width != null ? l.x : 0)}" y="${fmt(l.baseline)}">${l.segments.map(segment).join()}</tspan>',
     ];
     return '<text$attrs${opacityAttr()}>${spans.join()}</text>';
   }
@@ -307,6 +414,7 @@ class InkText extends InkStylable with InkTypography {
   Map<String, dynamic> toJson() => {
         'type': 'text',
         'text': text,
+        if (isStyled) 'runs': [for (final r in runs) r.toJson()],
         'font': fontFamily,
         'fontStyle': fontStyle,
         'size': fontSize,
@@ -318,6 +426,7 @@ class InkText extends InkStylable with InkTypography {
 
   factory InkText.fromJson(Map<String, dynamic> j) => InkText(
         text: j['text'],
+        runs: j['runs'] == null ? null : [for (final r in j['runs'] as List) TextRun.fromJson(r)],
         fontFamily: j['font'],
         fontStyle: j['fontStyle'] ?? 'Regular',
         fontSize: (j['size'] as num).toDouble(),
@@ -410,8 +519,8 @@ class InkTextPath extends InkStylable with InkTypography {
   }
 
   @override
-  (List<InkPath>, Rect) buildOutlines() {
-    if (text.isEmpty) return (const <InkPath>[], guide.bounds);
+  (List<InkPath>, Rect, List<InkPaint?>?) buildOutlines() {
+    if (text.isEmpty) return (const <InkPath>[], guide.bounds, null);
     final result = face.font.generateGlyphPaths(text.replaceAll('\n', ' '), fontSize: fontSize.clamp(0.1, 10000));
     final track = _track;
     final paths = <InkPath>[];
@@ -428,7 +537,7 @@ class InkTextPath extends InkStylable with InkTypography {
         return Offset(p.dx + lx * cosA - ly * sinA, p.dy + lx * sinA + ly * cosA);
       }));
     }
-    return (paths, guide.bounds);
+    return (paths, guide.bounds, null);
   }
 
   @override

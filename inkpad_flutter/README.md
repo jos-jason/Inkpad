@@ -76,6 +76,13 @@ Done:
   and new text. Path menu: Create Outlines from Text, and Place Text on Path
   (drag the start handle to slide the text along). Letters are drawn from
   the font's own outlines, so the screen, SVG export and outlines match.
+- Per-letter styling (beyond Inkpad): while typing, select letters and
+  change the font, style or size in the Text panel, or the color in the
+  Fill panel, for just those letters. Lines wrap across styles and grow to
+  fit their biggest letters; new letters take the style before them.
+  Kept in `.inkpad` files, SVG (nested tspans, read back exactly), PDF and
+  Create Outlines (one shape per color); styled tspans from other apps'
+  SVGs come in as styled letters
 - Fonts: the fonts installed on the device (macOS, Linux, Windows, Android;
   scanned in the background and cached) plus Lato, bundled. "Add Font…" in
   the Text panel adds a .ttf/.otf/.ttc to the app without installing it
@@ -158,7 +165,6 @@ Done:
 
 To port next (roughly in priority order; greyed out in the UI):
 - AI edit (placeholder button for now)
-- Per-letter styling (mixed fonts/colors within one text)
 - Releasing compound paths
 - Full color picker
 

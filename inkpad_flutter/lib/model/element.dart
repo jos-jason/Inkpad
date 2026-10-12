@@ -245,14 +245,31 @@ abstract class InkStylable extends InkElement {
   }
 
   /// A paint for the fill, or null if there is none.
-  Paint? fillPaint(double opacity) {
-    final f = fill;
+  Paint? fillPaint(double opacity) => paintFor(fill, opacity);
+
+  /// A paint for [f] across this shape (gradients fit its bounds).
+  Paint? paintFor(InkPaint? f, double opacity) {
     if (f == null) return null;
     if (f is InkGradient) {
       final shader = f.shader(bounds, opacity);
       return shader == null ? (Paint()..color = f.stops.last.color.toColor(opacity)) : (Paint()..shader = shader);
     }
     return Paint()..color = (f as InkColor).toColor(opacity);
+  }
+
+  /// A paint for the outline (without arrowheads), or null if none.
+  Paint? strokePaint(double opacity) {
+    final s = stroke;
+    if (s == null || !s.willRender) return null;
+    final p = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = s.width
+      ..strokeCap = s.flutterCap
+      ..strokeJoin = s.flutterJoin;
+    final g = s.gradient;
+    if (g == null) return p..color = s.color.toColor(opacity);
+    final shader = g.shader(bounds, opacity);
+    return shader == null ? (p..color = g.stops.last.color.toColor(opacity)) : (p..shader = shader);
   }
 
   void _renderContents(Canvas canvas, double opacity) {
