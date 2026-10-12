@@ -2,11 +2,13 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'bezier_node.dart';
+import 'effects.dart';
 import 'geometry.dart';
 import 'image.dart';
 import 'style.dart';
 import 'text.dart';
 
+export 'effects.dart';
 export 'image.dart';
 export 'text.dart';
 
@@ -14,7 +16,12 @@ export 'text.dart';
 abstract class InkElement {
   double opacity;
 
-  InkElement({this.opacity = 1});
+  /// A drop shadow (null for none) and blend mode, applied to the element
+  /// as a whole, as Inkpad's transparency layers did.
+  InkShadow? shadow;
+  InkBlendMode blendMode;
+
+  InkElement({this.opacity = 1, this.shadow, this.blendMode = InkBlendMode.normal});
 
   /// Geometric bounds, ignoring stroke width.
   Rect get bounds;
@@ -22,7 +29,27 @@ abstract class InkElement {
   /// Bounds including stroke (what actually gets painted).
   Rect get styleBounds => bounds;
 
-  void render(Canvas canvas);
+  /// Everything painted, including the shadow.
+  Rect get paintBounds {
+    final s = shadow;
+    if (s == null) return styleBounds;
+    final b = styleBounds;
+    return b.expandToInclude(b.shift(s.displacement).inflate(s.radius * 1.5));
+  }
+
+  /// Draws the element with its shadow and blend mode.
+  void render(Canvas canvas) {
+    final s = shadow;
+    if (s == null && blendMode == InkBlendMode.normal) return renderElement(canvas);
+    final blended = blendMode != InkBlendMode.normal;
+    if (blended) canvas.saveLayer(paintBounds, Paint()..blendMode = blendMode.flutter);
+    if (s != null) s.paint(canvas, styleBounds, () => renderElement(canvas));
+    renderElement(canvas);
+    if (blended) canvas.restore();
+  }
+
+  /// Draws the element itself (no shadow or blend mode).
+  void renderElement(Canvas canvas);
 
   void transform(Affine t);
 
@@ -33,7 +60,18 @@ abstract class InkElement {
 
   /// The SVG markup for this element; gradients and clip paths it needs are
   /// added to [w]'s definitions.
-  String toSvg(SvgWriter w);
+  String toSvg(SvgWriter w) {
+    final svg = elementSvg(w);
+    final s = shadow;
+    if (s == null && blendMode == InkBlendMode.normal) return svg;
+    final attrs = StringBuffer();
+    if (s != null) attrs.write(' filter="url(#${w.shadow(s)})"');
+    if (blendMode != InkBlendMode.normal) attrs.write(' style="mix-blend-mode:${blendMode.css}"');
+    return '<g$attrs>$svg</g>';
+  }
+
+  /// The SVG for the element itself (no shadow or blend mode).
+  String elementSvg(SvgWriter w);
 
   InkElement clone() => InkElement.fromJson(toJson());
 
@@ -55,12 +93,40 @@ abstract class InkElement {
       };
 
   String opacityAttr() => opacity < 1 ? ' opacity="${fmt(opacity)}"' : '';
+
+  /// Takes opacity, shadow and blend mode from [other].
+  void copyEffects(InkElement other) {
+    opacity = other.opacity;
+    shadow = other.shadow;
+    blendMode = other.blendMode;
+  }
+
+  /// JSON for opacity, shadow and blend mode.
+  Map<String, dynamic> effectsJson() => {
+        'opacity': opacity,
+        if (shadow != null) 'shadow': shadow!.toJson(),
+        if (blendMode != InkBlendMode.normal) 'blend': blendMode.name,
+      };
+
+  void readEffectsJson(Map<String, dynamic> j) {
+    opacity = (j['opacity'] as num?)?.toDouble() ?? 1;
+    shadow = j['shadow'] == null ? null : InkShadow.fromJson(j['shadow']);
+    blendMode = InkBlendMode.values.asNameMap()[j['blend']] ?? InkBlendMode.normal;
+  }
 }
 
 /// Collects the `<defs>` (gradients, clip paths) while a drawing is exported.
 class SvgWriter {
   final List<String> definitions = [];
-  int _gradients = 0, _clips = 0;
+  int _gradients = 0, _clips = 0, _shadows = 0;
+
+  /// Adds a drop shadow filter; returns its id.
+  String shadow(InkShadow s) {
+    final id = 'shadow${++_shadows}';
+    definitions.add(s.svgFilter(id));
+    return id;
+  }
+
   final Map<String, String> _images = {};
 
   /// Adds an image's data once, however often it's used (as Inkpad did);
@@ -158,7 +224,7 @@ abstract class InkStylable extends InkElement {
   }
 
   @override
-  void render(Canvas canvas) {
+  void renderElement(Canvas canvas) {
     if (isEmpty) return;
     // A mask's opacity applies to it and its contents as a whole.
     if (isMasking && opacity < 1) {
@@ -235,7 +301,7 @@ abstract class InkStylable extends InkElement {
   }
 
   @override
-  String toSvg(SvgWriter w) {
+  String elementSvg(SvgWriter w) {
     if (!isMasking) return _pathSvg(w, fill: true, stroke: true, opacity: true);
     // A mask: its fill, then the clipped contents, then its stroke.
     final clip = w.clipPath(this);
@@ -271,7 +337,7 @@ abstract class InkStylable extends InkElement {
         'fill': fill?.toJson(),
         'stroke': stroke?.toJson(),
         if (fillRule == FillRule.evenOdd) 'fillRule': 'evenOdd',
-        'opacity': opacity,
+        ...effectsJson(),
         if (isMasking) 'masked': maskedElements.map((e) => e.toJson()).toList(),
       };
 
@@ -280,7 +346,7 @@ abstract class InkStylable extends InkElement {
     maskedElements = [for (final e in (j['masked'] as List?) ?? const []) InkElement.fromJson(e)];
     stroke = j['stroke'] == null ? null : StrokeStyle.fromJson(j['stroke']);
     fillRule = j['fillRule'] == 'evenOdd' ? FillRule.evenOdd : FillRule.nonZero;
-    opacity = (j['opacity'] as num).toDouble();
+    readEffectsJson(j);
   }
 }
 
@@ -624,7 +690,7 @@ class InkGroup extends InkElement {
       elements.map((e) => e.styleBounds).reduce((a, b) => a.expandToInclude(b));
 
   @override
-  void render(Canvas canvas) {
+  void renderElement(Canvas canvas) {
     if (opacity < 1) {
       canvas.saveLayer(styleBounds, Paint()..color = Color.fromRGBO(0, 0, 0, opacity));
       for (final e in elements) {
@@ -652,17 +718,15 @@ class InkGroup extends InkElement {
   bool intersectsRect(Rect r) => elements.any((e) => e.intersectsRect(r));
 
   @override
-  String toSvg(SvgWriter w) => '<g${opacityAttr()}>${elements.map((e) => e.toSvg(w)).join()}</g>';
+  String elementSvg(SvgWriter w) => '<g${opacityAttr()}>${elements.map((e) => e.toSvg(w)).join()}</g>';
 
   @override
   Map<String, dynamic> toJson() => {
         'type': 'group',
         'elements': elements.map((e) => e.toJson()).toList(),
-        'opacity': opacity,
+        ...effectsJson(),
       };
 
-  factory InkGroup.fromJson(Map<String, dynamic> j) => InkGroup(
-        (j['elements'] as List).map((e) => InkElement.fromJson(e)).toList(),
-        opacity: (j['opacity'] as num).toDouble(),
-      );
+  factory InkGroup.fromJson(Map<String, dynamic> j) =>
+      InkGroup((j['elements'] as List).map((e) => InkElement.fromJson(e)).toList())..readEffectsJson(j);
 }

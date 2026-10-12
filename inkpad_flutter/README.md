@@ -91,6 +91,12 @@ Done:
 - Fill panel: none / color / gradient, draggable gradient stops
 - Layers panel: add, duplicate, delete, rename, show/hide, lock, highlight
   color, drag to reorder, opacity
+- Shadow & opacity panel (port of WDShadowController): drop shadow with
+  HSB/alpha/hex color, angle dial, offset and blur (0–50 pt); opacity; and
+  Inkpad's 16 blend modes (multiply, screen, overlay…). New shapes take the
+  current settings. Exported to SVG as `feDropShadow` filters and
+  `mix-blend-mode`; drop shadows (including the blur + offset recipe) and
+  blend modes import back
 - Rulers in in/cm/mm/pt/px (Settings)
 - Scale tool (port of WDScaleTool), alongside the scale handles
 - Rotation: the knob above a selection (select tool), or the Rotate tool
@@ -126,7 +132,6 @@ Done:
 - Responsive layout (side panels on desktop/tablet, bottom bar on phones)
 
 To port next (roughly in priority order; greyed out in the UI):
-- Shadow & opacity panel (shadow color, angle, offset, blur; blend mode)
 - Color menu (color wheel): blend back to front / horizontally / vertically,
   color balance, hue & saturation, desaturate, invert
 - AI edit (placeholder button for now)

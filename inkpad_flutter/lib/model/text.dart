@@ -267,8 +267,8 @@ class InkText extends InkStylable with InkTypography {
   void transformGeometry(Affine t) => placement = placement.then(t);
 
   @override
-  String toSvg(SvgWriter w) {
-    if (isMasking) return super.toSvg(w); // masks export as outlines + clip
+  String elementSvg(SvgWriter w) {
+    if (isMasking) return super.elementSvg(w); // masks export as outlines + clip
     final t = placement;
     final attrs = StringBuffer(' transform="matrix(${[t.a, t.b, t.c, t.d, t.tx, t.ty].map(fmt).join(' ')})"');
     attrs.write(' ${svgFontAttrs()}');
@@ -448,8 +448,8 @@ class InkTextPath extends InkStylable with InkTypography {
   void transformGeometry(Affine t) => guide.transformGeometry(t);
 
   @override
-  String toSvg(SvgWriter w) {
-    if (isMasking) return super.toSvg(w);
+  String elementSvg(SvgWriter w) {
+    if (isMasking) return super.elementSvg(w);
     final id = w.textPath(guide);
     final attrs = StringBuffer(' ${svgFontAttrs()}');
     final f = fill;

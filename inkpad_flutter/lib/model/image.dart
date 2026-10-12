@@ -127,7 +127,7 @@ class InkImage extends InkElement {
   }
 
   @override
-  void render(Canvas canvas) {
+  void renderElement(Canvas canvas) {
     canvas.save();
     canvas.transform(Float64List.fromList(placement.toMatrix4()));
     final r = naturalRect;
@@ -166,7 +166,7 @@ class InkImage extends InkElement {
   }
 
   @override
-  String toSvg(SvgWriter w) {
+  String elementSvg(SvgWriter w) {
     final id = w.image(data);
     final t = placement;
     final m = [t.a, t.b, t.c, t.d, t.tx, t.ty].map(fmt).join(' ');
@@ -178,17 +178,13 @@ class InkImage extends InkElement {
         'type': 'image',
         'image': data.id,
         'placement': placement.toJson(),
-        'opacity': opacity,
+        ...effectsJson(),
       };
 
   factory InkImage.fromJson(Map<String, dynamic> j) {
     final data = ImageData.lookup(j['image'] as String);
     if (data == null) throw FormatException('Missing image data ${j['image']}');
-    return InkImage(
-      data,
-      placement: Affine.fromJson(j['placement']),
-      opacity: (j['opacity'] as num).toDouble(),
-    );
+    return InkImage(data, placement: Affine.fromJson(j['placement']))..readEffectsJson(j);
   }
 }
 

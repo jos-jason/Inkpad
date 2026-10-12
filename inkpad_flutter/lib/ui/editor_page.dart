@@ -21,6 +21,7 @@ import 'file_actions.dart';
 import 'panels/fill_panel.dart';
 import 'panels/layers_panel.dart';
 import 'panels/misc_panels.dart';
+import 'panels/shadow_panel.dart';
 import 'panels/stroke_panel.dart';
 import 'panels/text_panel.dart';
 import 'text_editor_overlay.dart';
@@ -570,7 +571,7 @@ class _EditorPageState extends State<EditorPage> {
           builder: (b) => IconButton(
             tooltip: 'Shadow & opacity',
             icon: const ToolIcon(ToolIcon.shadow, size: 30),
-            onPressed: () => _panel(b, OpacityPanel(controller: c), width: 380),
+            onPressed: () => _panel(b, ShadowPanel(controller: c), width: 420),
           ),
         ),
         Builder(

@@ -62,7 +62,9 @@ class FreehandTool extends Tool {
     } else {
       path
         ..stroke = brushStroke(c)
-        ..opacity = c.defaultOpacity;
+        ..opacity = c.defaultOpacity
+        ..shadow = c.defaultShadow
+        ..blendMode = c.defaultBlendMode;
     }
     c.addElement(path);
     // Select it without adopting its style: a brush line has no fill, and

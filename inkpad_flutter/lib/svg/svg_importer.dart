@@ -56,7 +56,10 @@ const _inherited = {
 };
 
 /// Properties that can be set by attribute, CSS or style="".
-const _styleProperties = {..._inherited, 'opacity', 'display', 'clip-path', 'mask', 'stop-color', 'stop-opacity'};
+const _styleProperties = {
+  ..._inherited, 'opacity', 'display', 'clip-path', 'mask', 'stop-color', 'stop-opacity', 'filter', 'mix-blend-mode',
+  'flood-color', 'flood-opacity',
+};
 
 /// Elements that never render directly.
 const _nonRendering = {
@@ -414,8 +417,78 @@ class _SvgImporter {
     final maskId = _funcIri(own['mask']);
     if (result != null && maskId != null) result = _applyMask(result, maskId, ctm);
 
-    if (result != null) result.opacity *= _opacity(own);
+    if (result != null) {
+      final shadowId = _funcIri(own['filter']);
+      final shadow = shadowId == null ? null : _shadow(shadowId, ctm);
+      final blend = InkBlendMode.fromCss(own['mix-blend-mode']);
+      if (blend == null && own['mix-blend-mode'] != null) _notes.add('Some blend modes weren\'t recognized');
+      if (shadow != null || (blend != null && blend != InkBlendMode.normal)) {
+        // An element keeps one shadow and blend mode; nest if it has its own.
+        if (result.shadow != null || result.blendMode != InkBlendMode.normal) result = InkGroup([result]);
+        result.shadow = shadow;
+        result.blendMode = blend ?? InkBlendMode.normal;
+      }
+      result.opacity *= _opacity(own);
+    }
     return result;
+  }
+
+  /// A drop shadow from a `<filter>`: feDropShadow, or the classic
+  /// blur + offset (+ flood color) recipe. Other filters are left out.
+  InkShadow? _shadow(String id, Affine ctm) {
+    final f = _ids[id];
+    if (f == null || f.name.local != 'filter') return null;
+    final prims = f.childElements.toList();
+    XmlElement? prim(String name) => prims.where((p) => p.name.local == name).firstOrNull;
+    String? prop(XmlElement e, String name) => parseDeclarations(e.getAttribute('style'))[name] ?? e.getAttribute(name);
+    double num(XmlElement? e, String name, double fallback) =>
+        e == null ? fallback : (parseNumberList(prop(e, name)).firstOrNull ?? fallback);
+
+    double dx, dy, deviation;
+    InkColor color;
+    final drop = prim('feDropShadow');
+    final blur = prim('feGaussianBlur'), offset = prim('feOffset');
+    if (drop != null) {
+      dx = num(drop, 'dx', 2);
+      dy = num(drop, 'dy', 2);
+      deviation = num(drop, 'stdDeviation', 2);
+      color = (parseColor(prop(drop, 'flood-color')) ?? InkColor.black)
+          .withAlpha((double.tryParse(prop(drop, 'flood-opacity') ?? '') ?? 1).clamp(0.0, 1.0));
+    } else if (blur != null && offset != null) {
+      dx = num(offset, 'dx', 0);
+      dy = num(offset, 'dy', 0);
+      deviation = num(blur, 'stdDeviation', 0);
+      final flood = prim('feFlood');
+      var alpha = 1.0;
+      var c = InkColor.black;
+      if (flood != null) {
+        c = parseColor(prop(flood, 'flood-color')) ?? InkColor.black;
+        alpha = double.tryParse(prop(flood, 'flood-opacity') ?? '') ?? 1;
+      } else {
+        // Shadow strength set by scaling alpha (feFuncA or feColorMatrix).
+        final funcA = f.descendantElements.where((e) => e.name.local == 'feFuncA').firstOrNull;
+        final matrix = prim('feColorMatrix');
+        if (funcA != null) {
+          alpha = num(funcA, 'slope', 1);
+        } else if (matrix != null && (matrix.getAttribute('type') ?? 'matrix') == 'matrix') {
+          final v = parseNumberList(matrix.getAttribute('values'));
+          if (v.length == 20) alpha = v[18];
+        }
+      }
+      color = c.withAlpha(alpha.clamp(0.0, 1.0));
+    } else {
+      _notes.add('Filter effects other than drop shadows were left out');
+      return null;
+    }
+    final scale = ctm.scaleFactor;
+    var angle = math.atan2(-dy, dx) * 180 / math.pi;
+    if (angle < 0) angle += 360;
+    return InkShadow(
+      color: color,
+      radius: deviation * 2 * scale,
+      offset: math.sqrt(dx * dx + dy * dy) * scale,
+      angle: (dx == 0 && dy == 0) ? 315 : angle,
+    );
   }
 
   static final _funcIriRe = RegExp(r'''^url\(\s*["']?#([^)"']+)["']?\s*\)''');

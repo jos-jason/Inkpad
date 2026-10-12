@@ -47,7 +47,7 @@ class InkLayer {
       canvas.saveLayer(null, Paint()..color = Color.fromRGBO(0, 0, 0, opacity));
     }
     for (final e in elements) {
-      if (e.styleBounds.overlaps(clip)) e.render(canvas);
+      if (e.paintBounds.overlaps(clip)) e.render(canvas);
     }
     if (needsLayer) canvas.restore();
   }

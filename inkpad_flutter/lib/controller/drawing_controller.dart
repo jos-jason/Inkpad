@@ -93,7 +93,9 @@ class DrawingController extends ChangeNotifier {
   InkPath styledPath(InkPath p) => p
     ..fill = fillPaint
     ..stroke = strokeStyle
-    ..opacity = defaultOpacity;
+    ..opacity = defaultOpacity
+    ..shadow = defaultShadow
+    ..blendMode = defaultBlendMode;
 
   void addElement(InkElement e) {
     drawing.activeLayer.elements.add(e);
@@ -501,8 +503,7 @@ class DrawingController extends ChangeNotifier {
         fill: path.fill,
         stroke: path.stroke,
         fillRule: path.fillRule,
-        opacity: path.opacity,
-      );
+      )..copyEffects(path);
       path.nodes = path.nodes.sublist(0, index + 1);
       container.insert(container.indexOf(path) + 1, sibling);
       result = sibling;
@@ -552,7 +553,7 @@ class DrawingController extends ChangeNotifier {
             p
               ..fill = e.fill
               ..stroke = e.stroke
-              ..opacity = e.opacity,
+              ..copyEffects(e),
         ];
       } else {
         final r = Pathfinder.combine([e, eraser], BooleanOp.subtractFront);
@@ -562,7 +563,7 @@ class DrawingController extends ChangeNotifier {
               ..fill = e.fill
               ..stroke = e.stroke
               ..fillRule = r.fillRule
-              ..opacity = e.opacity,
+              ..copyEffects(e),
         ];
       }
       final i = layer.elements.indexOf(e);
@@ -592,6 +593,8 @@ class DrawingController extends ChangeNotifier {
       return;
     }
     defaultOpacity = source.opacity;
+    defaultShadow = source.shadow;
+    defaultBlendMode = source.blendMode;
     final targets = selection.where((e) => !identical(e, source)).toList();
     if (targets.isNotEmpty) {
       checkpoint();
@@ -599,7 +602,7 @@ class DrawingController extends ChangeNotifier {
         if (e is InkStylable) {
           e.fill = fillPaint;
           if (source is InkStylable) e.stroke = strokeStyle;
-          e.opacity = defaultOpacity;
+          e.copyEffects(source);
         } else if (e is InkGroup) {
           e.elements.forEach(apply);
         }
@@ -638,7 +641,9 @@ class DrawingController extends ChangeNotifier {
       // Make sure the text isn't invisible.
       fill: fillPaint is InkGradient ? (fillPaint as InkGradient).copyWith(clearGeometry: true) : (fillPaint ?? InkColor.black),
       opacity: defaultOpacity,
-    );
+    )
+      ..shadow = defaultShadow
+      ..blendMode = defaultBlendMode;
     drawing.activeLayer.elements.add(t);
     selection
       ..clear()
@@ -750,8 +755,7 @@ class DrawingController extends ChangeNotifier {
         [for (final p in shapes) InkPath(nodes: List.of(p.nodes), closed: true)],
         fill: t.fill,
         stroke: t.stroke,
-        opacity: t.opacity,
-      );
+      )..copyEffects(t);
       layer.elements[layer.elements.indexOf(t)] = outline;
       results.add(outline);
     }
@@ -786,8 +790,7 @@ class DrawingController extends ChangeNotifier {
       fontSize: source?.fontSize ?? fontSize,
       fill: source?.fill ?? fillPaint ?? InkColor.black,
       stroke: source?.stroke,
-      opacity: source?.opacity ?? path.opacity,
-    );
+    )..copyEffects(source ?? path);
     layer.elements[layer.elements.indexOf(path)] = tp;
     if (source != null) layerOf(source)?.elements.remove(source);
     selection
@@ -890,7 +893,7 @@ class DrawingController extends ChangeNotifier {
       if (outline == null) continue;
       outline
         ..fill = e.stroke!.color
-        ..opacity = e.opacity;
+        ..copyEffects(e);
       if (e.fill != null) {
         e.stroke = null;
         layer.elements.insert(index + 1, outline);
@@ -924,8 +927,7 @@ class DrawingController extends ChangeNotifier {
       fill: top.fill,
       stroke: top.stroke,
       fillRule: top.fillRule,
-      opacity: top.opacity,
-    );
+    )..copyEffects(top);
     _replace(ordered, top, compound);
   }
 
@@ -945,7 +947,7 @@ class DrawingController extends ChangeNotifier {
       final layer = layerOf(e)!;
       final parts = [
         for (final p in e.subpaths)
-          InkPath(nodes: p.nodes, closed: p.closed, fill: e.fill, stroke: e.stroke, fillRule: e.fillRule, opacity: e.opacity),
+          InkPath(nodes: p.nodes, closed: p.closed, fill: e.fill, stroke: e.stroke, fillRule: e.fillRule)..copyEffects(e),
       ];
       final i = layer.elements.indexOf(e);
       layer.elements
@@ -977,7 +979,7 @@ class DrawingController extends ChangeNotifier {
       result
         ..fill = styleFrom.fill is InkGradient ? (styleFrom.fill as InkGradient).copyWith(clearGeometry: true) : styleFrom.fill
         ..stroke = styleFrom.stroke
-        ..opacity = styleFrom.opacity;
+        ..copyEffects(styleFrom);
     }
     _replace(ordered, styleFrom, result);
   }
@@ -1089,6 +1091,43 @@ class DrawingController extends ChangeNotifier {
       if (record) checkpoint();
       for (final e in selection) {
         e.opacity = value;
+      }
+    }
+    notifyListeners();
+  }
+
+  // ---- Shadow and blend mode (Inkpad's shadow & opacity panel) -------------
+
+  /// Shadow for new shapes, and the selection's when one is selected.
+  InkShadow? get shadow => selection.isEmpty ? defaultShadow : selection.first.shadow;
+  InkShadow? defaultShadow;
+
+  /// The settings the shadow controls show (and restore when turned on).
+  InkShadow lastShadow = const InkShadow();
+
+  InkBlendMode get blendMode => selection.isEmpty ? defaultBlendMode : selection.first.blendMode;
+  InkBlendMode defaultBlendMode = InkBlendMode.normal;
+
+  /// Sets the shadow (null removes it) for the selection and new shapes.
+  /// Pass record: false while a control is moving.
+  void setShadow(InkShadow? value, {bool record = true}) {
+    defaultShadow = value;
+    if (value != null) lastShadow = value;
+    if (selection.isNotEmpty) {
+      if (record) checkpoint();
+      for (final e in selection) {
+        e.shadow = value;
+      }
+    }
+    notifyListeners();
+  }
+
+  void setBlendMode(InkBlendMode value) {
+    defaultBlendMode = value;
+    if (selection.isNotEmpty) {
+      checkpoint();
+      for (final e in selection) {
+        e.blendMode = value;
       }
     }
     notifyListeners();
