@@ -155,6 +155,11 @@ class SvgWriter {
     return id;
   }
 
+  /// Stroke attributes for [s] on a shape with [bounds] (adding its
+  /// gradient's definition if it has one).
+  Map<String, String> strokeAttributes(StrokeStyle s, Rect bounds) =>
+      s.svgAttributes(s.gradient == null ? null : gradient(s.gradient!, bounds));
+
   /// Adds a `<clipPath>` with [shape]'s outline; returns its id.
   String clipPath(InkStylable shape) {
     final id = 'clip${++_clips}';
@@ -199,6 +204,8 @@ abstract class InkStylable extends InkElement {
     // shape, as Inkpad's fill transform did.
     final f = fill;
     if (f is InkGradient) fill = f.copyWith(geometry: f.fitted(bounds).transformed(t));
+    final sg = stroke?.gradient;
+    if (sg != null) stroke = stroke!.copyWith(gradient: sg.copyWith(geometry: sg.fitted(bounds).transformed(t)));
     transformGeometry(t);
     for (final e in maskedElements) {
       e.transform(t);
@@ -266,20 +273,28 @@ abstract class InkStylable extends InkElement {
       final line = arrows?.linePath() ?? path;
       // With arrowheads, line and arrows are drawn as one: a see-through
       // stroke doesn't darken where they overlap (as in Inkpad).
-      final alpha = s.color.alpha * opacity;
+      final g = s.gradient;
+      final alpha = (g == null ? s.color.alpha : 1) * opacity;
       final unify = arrows != null && alpha < 1;
       if (unify) canvas.saveLayer(styleBounds.inflate(1), Paint()..color = Color.fromRGBO(0, 0, 0, alpha));
-      final color = unify ? s.color.withAlpha(1).toColor() : s.color.toColor(opacity);
+      final paintOpacity = unify ? 1.0 : opacity;
+      Paint paint() {
+        final p = Paint();
+        final shader = g?.shader(bounds, paintOpacity);
+        if (shader != null) return p..shader = shader;
+        if (g != null) return p..color = g.stops.last.color.toColor(paintOpacity);
+        return p..color = unify ? s.color.withAlpha(1).toColor() : s.color.toColor(opacity);
+      }
+
       canvas.drawPath(
         s.dashPattern.isEmpty ? line : dashPath(line, s.dashPattern),
-        Paint()
+        paint()
           ..style = PaintingStyle.stroke
-          ..color = color
           ..strokeWidth = s.width
           ..strokeCap = s.flutterCap
           ..strokeJoin = s.flutterJoin,
       );
-      if (arrows != null) canvas.drawPath(arrows.arrowsPath(s), Paint()..color = color);
+      if (arrows != null) canvas.drawPath(arrows.arrowsPath(s), paint());
       if (unify) canvas.restore();
     }
   }
@@ -339,7 +354,7 @@ abstract class InkStylable extends InkElement {
     }
     if (fillRule == FillRule.evenOdd) attrs['fill-rule'] = 'evenodd';
     final s = stroke ? this.stroke : null;
-    if (s != null && s.willRender) attrs.addAll(s.svgAttributes());
+    if (s != null && s.willRender) attrs.addAll(w.strokeAttributes(s, bounds));
     final a = attrs.entries.map((e) => '${e.key}="${e.value}"').join(' ');
     return '<path $a${opacity ? opacityAttr() : ''}/>';
   }
@@ -540,11 +555,14 @@ class InkPath extends InkStylable {
     final a = arrowLayout;
     final s = stroke;
     if (a == null || s == null || isMasking) return super.elementSvg(w);
-    final unify = s.color.alpha < 1;
+    final g = s.gradient;
+    final unify = g == null && s.color.alpha < 1;
     final color = unify ? s.color.withAlpha(1) : s.color;
-    final strokeAttrs = s.copyWith(color: color).svgAttributes().entries.map((e) => ' ${e.key}="${e.value}"').join();
+    final gradientId = g == null ? null : w.gradient(g, bounds);
+    final strokeAttrs = s.copyWith(color: color).svgAttributes(gradientId).entries.map((e) => ' ${e.key}="${e.value}"').join();
     final line = '<path d="${InkPath(nodes: a.line).svgPathData}" fill="none"$strokeAttrs/>';
-    final heads = '<path d="${a.arrowOutlines(s).map((c) => c.svgPathData).join()}" fill="${color.hexValue}" fill-rule="evenodd"/>';
+    final headFill = gradientId == null ? color.hexValue : 'url(#$gradientId)';
+    final heads = '<path d="${a.arrowOutlines(s).map((c) => c.svgPathData).join()}" fill="$headFill" fill-rule="evenodd"/>';
     final strokePart = unify ? '<g opacity="${fmt(s.color.alpha)}">$line$heads</g>' : '$line$heads';
     final ends = [
       if (s.startArrow.isNotEmpty) ' inkpad:start-arrow="${s.startArrow}"',

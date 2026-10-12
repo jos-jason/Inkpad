@@ -753,7 +753,23 @@ class _StrokeSwatch extends StatelessWidget {
               canvas.drawRect(r.deflate(4), Paint()..style = PaintingStyle.stroke..strokeWidth = 1.5..color = Colors.black54);
               _noneSlash(canvas, r);
             } else {
-              canvas.drawRect(r.deflate(4), Paint()..style = PaintingStyle.stroke..strokeWidth = 6..color = s.color.withAlpha(1).toColor());
+              final paint = Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 6
+                ..color = s.color.withAlpha(1).toColor();
+              final g = s.gradient;
+              if (g != null) {
+                // Its colors across the swatch, fully opaque.
+                final shader = g
+                    .copyWith(
+                      type: GradientType.linear,
+                      stops: [for (final st in g.stops) GradientStop(st.offset, st.color.withAlpha(1))],
+                      clearGeometry: true,
+                    )
+                    .shader(r, 1);
+                if (shader != null) paint.shader = shader;
+              }
+              canvas.drawRect(r.deflate(4), paint);
             }
           }),
         ),

@@ -135,6 +135,13 @@ class DrawingController extends ChangeNotifier {
 
   // ---- Selection --------------------------------------------------------
 
+  /// A stroke to reuse on other shapes: its gradient (if any) fits each
+  /// shape, as fills do.
+  static StrokeStyle? _unplaced(StrokeStyle? s) {
+    final g = s?.gradient;
+    return g == null ? s : s!.copyWith(gradient: g.copyWith(clearGeometry: true));
+  }
+
   void select(InkElement e, {bool extend = false}) {
     if (!identical(e, editingText)) endEditing();
     if (!extend) selection.clear();
@@ -146,7 +153,7 @@ class DrawingController extends ChangeNotifier {
       adoptTextStyle(e);
       final f = e.fill;
       fillPaint = f is InkGradient ? f.copyWith(clearGeometry: true) : f;
-      strokeStyle = e.stroke;
+      strokeStyle = _unplaced(e.stroke);
     }
     notifyListeners();
   }
@@ -592,7 +599,7 @@ class DrawingController extends ChangeNotifier {
     if (source is InkStylable) {
       final f = source.fill;
       fillPaint = f is InkGradient ? f.copyWith(clearGeometry: true) : f;
-      strokeStyle = source.stroke;
+      strokeStyle = _unplaced(source.stroke);
     } else if (sampled != null) {
       fillPaint = sampled;
     } else {
@@ -898,7 +905,8 @@ class DrawingController extends ChangeNotifier {
       final index = layer.elements.indexOf(e);
       if (outline == null) continue;
       outline
-        ..fill = e.stroke!.color
+        // A gradient keeps its place: fitted to the original shape.
+        ..fill = switch (e.stroke!.gradient) { null => e.stroke!.color, final g => g.copyWith(geometry: g.fitted(e.bounds)) }
         ..copyEffects(e);
       if (e.fill != null) {
         e.stroke = null;
@@ -1281,7 +1289,11 @@ class DrawingController extends ChangeNotifier {
         InkGradient g => g.copyWith(stops: [for (final s in g.stops) GradientStop(s.offset, adjust(s.color))]),
         _ => fill,
       };
-      e.stroke = stroke?.copyWith(color: adjust(stroke.color));
+      final sg = stroke?.gradient;
+      e.stroke = stroke?.copyWith(
+        color: adjust(stroke.color),
+        gradient: sg?.copyWith(stops: [for (final s in sg.stops) GradientStop(s.offset, adjust(s.color))]),
+      );
     }
     e.shadow = shadow?.copyWith(color: adjust(shadow.color));
   }

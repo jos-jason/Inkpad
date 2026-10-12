@@ -283,7 +283,7 @@ class InkText extends InkStylable with InkTypography {
     }
     final s = stroke;
     if (s != null && s.willRender) {
-      for (final e in s.svgAttributes().entries) {
+      for (final e in w.strokeAttributes(s, bounds).entries) {
         attrs.write(' ${e.key}="${e.value}"');
       }
     }
@@ -463,7 +463,7 @@ class InkTextPath extends InkStylable with InkTypography {
     }
     final s = stroke;
     if (s != null && s.willRender) {
-      for (final e in s.svgAttributes().entries) {
+      for (final e in w.strokeAttributes(s, bounds).entries) {
         attrs.write(' ${e.key}="${e.value}"');
       }
     }

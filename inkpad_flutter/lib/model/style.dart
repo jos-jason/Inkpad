@@ -157,6 +157,11 @@ class StrokeStyle {
   final String startArrow;
   final String endArrow;
 
+  /// A gradient along the outline, instead of [color] (which then stands in
+  /// where one color is needed, e.g. swatches). Inkpad's strokes were
+  /// solid only; SVG strokes can be gradients.
+  final InkGradient? gradient;
+
   const StrokeStyle({
     this.width = 1,
     this.cap = LineCap.round,
@@ -165,9 +170,13 @@ class StrokeStyle {
     this.dashPattern = const [],
     this.startArrow = '',
     this.endArrow = '',
+    this.gradient,
   });
 
-  bool get willRender => width > 0 && color.alpha > 0;
+  bool get willRender => width > 0 && (gradient != null || color.alpha > 0);
+
+  /// The outline's paint: its gradient or its color.
+  InkPaint get paint => gradient ?? color;
 
   bool get hasArrows => startArrow.isNotEmpty || endArrow.isNotEmpty;
 
@@ -179,6 +188,8 @@ class StrokeStyle {
     List<double>? dashPattern,
     String? startArrow,
     String? endArrow,
+    InkGradient? gradient,
+    bool clearGradient = false,
   }) =>
       StrokeStyle(
         width: width ?? this.width,
@@ -188,7 +199,13 @@ class StrokeStyle {
         dashPattern: dashPattern ?? this.dashPattern,
         startArrow: startArrow ?? this.startArrow,
         endArrow: endArrow ?? this.endArrow,
+        gradient: clearGradient ? null : gradient ?? this.gradient,
       );
+
+  /// This stroke painted with [paint] (a color or a gradient).
+  StrokeStyle withPaint(InkPaint paint) => paint is InkGradient
+      ? copyWith(gradient: paint, color: paint.representativeColor)
+      : copyWith(color: paint as InkColor, clearGradient: true);
 
   /// The arrows swapped end for end (for reversing a path).
   StrokeStyle get swappedArrows => copyWith(startArrow: endArrow, endArrow: startArrow);
@@ -205,9 +222,15 @@ class StrokeStyle {
         LineJoin.bevel => StrokeJoin.bevel,
       };
 
-  Map<String, String> svgAttributes() => {
-        'stroke': color.hexValue,
-        if (color.alpha != 1) 'stroke-opacity': fmt(color.alpha),
+  /// The SVG stroke attributes; [gradientId] names this stroke's gradient
+  /// definition, if it has one.
+  Map<String, String> svgAttributes([String? gradientId]) => {
+        if (gradient != null && gradientId != null)
+          'stroke': 'url(#$gradientId)'
+        else ...{
+          'stroke': color.hexValue,
+          if (color.alpha != 1) 'stroke-opacity': fmt(color.alpha),
+        },
         'stroke-width': fmt(width),
         'stroke-linecap': cap.name,
         'stroke-linejoin': join.name,
@@ -222,6 +245,7 @@ class StrokeStyle {
         'dash': dashPattern,
         if (startArrow.isNotEmpty) 'startArrow': startArrow,
         if (endArrow.isNotEmpty) 'endArrow': endArrow,
+        if (gradient != null) 'gradient': gradient!.toJson(),
       };
 
   factory StrokeStyle.fromJson(Map<String, dynamic> j) => StrokeStyle(
@@ -232,5 +256,6 @@ class StrokeStyle {
         dashPattern: (j['dash'] as List).cast<num>().map((n) => n.toDouble()).toList(),
         startArrow: j['startArrow'] ?? '',
         endArrow: j['endArrow'] ?? '',
+        gradient: j['gradient'] == null ? null : InkGradient.fromJson(j['gradient']),
       );
 }

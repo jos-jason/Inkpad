@@ -793,9 +793,6 @@ class _SvgImporter {
     StrokeStyle? stroke;
     final strokePaint = _resolvePaint(style['stroke'] ?? 'none', style['stroke-opacity'], style['color'],
         box: localBounds, ctm: context.ctm);
-    if (strokePaint is InkGradient) {
-      _notes.add('Gradient outlines were replaced by a solid color (outlines are solid-color only for now)');
-    }
     final strokeColor = strokePaint?.representativeColor;
     if (strokeColor != null) {
       final width = (parseLength(style['stroke-width'], percentOf: _viewDiagonal) ?? 1) * scale;
@@ -808,6 +805,7 @@ class _SvgImporter {
         cap: switch (style['stroke-linecap']) { 'round' => LineCap.round, 'square' => LineCap.square, _ => LineCap.butt },
         join: switch (style['stroke-linejoin']) { 'round' => LineJoin.round, 'bevel' => LineJoin.bevel, _ => LineJoin.miter },
         dashPattern: dashes.map((d) => d * scale).toList(),
+        gradient: strokePaint is InkGradient ? strokePaint : null,
       );
     }
     return (fill, stroke);

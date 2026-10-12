@@ -17,7 +17,8 @@ import 'raster_export.dart';
 /// into a PDF context.
 ///
 /// Shapes, outlines, dashes, arrowheads, gradients, clipping masks,
-/// opacity and blend modes stay vector; images are embedded at full
+/// opacity and blend modes stay vector (gradient outlines as filled
+/// shapes); images are embedded at full
 /// resolution; text is drawn as its letter shapes (so it looks the same
 /// everywhere, but can't be selected as text). Shadows are embedded as
 /// images under their shapes. Approximated: group opacity applies to each
@@ -131,6 +132,15 @@ class _PdfWriter {
   }
 
   void _stroke(InkStylable e, StrokeStyle s, List<InkPath> contours, double a, InkBlendMode mode) {
+    final g0 = s.gradient;
+    if (g0 != null) {
+      // PDF can't paint a gradient along a line: fill the outline's shape.
+      final outline = Pathfinder.outlineStroke(e);
+      if (outline != null) {
+        _gradient(g0.copyWith(geometry: g0.fitted(e.bounds)), e.bounds, _contours(outline), false, a, mode);
+      }
+      return;
+    }
     final arrows = e is InkPath ? e.arrowLayout : null;
     g.saveContext();
     _state(s.color.alpha * a, s.color.alpha * a, mode);

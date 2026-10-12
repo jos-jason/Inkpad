@@ -6,6 +6,9 @@ import '../../model/style.dart';
 import '../chrome/chrome.dart';
 import '../chrome/color_editor.dart';
 import '../chrome/tool_icons.dart';
+import 'fill_panel.dart' show GradientControls;
+
+enum _Kind { none, color, gradient }
 
 /// Stroke color, caps, joins, width and dashes. Ported in spirit from
 /// Inkpad's WDStrokeController.
@@ -22,6 +25,9 @@ class _StrokePanelState extends State<StrokePanel> {
   static StrokeStyle _lastStroke = const StrokeStyle(width: 2);
 
   bool _choosingArrows = false;
+
+  /// The selected gradient stop, while the outline is a gradient.
+  int _stop = 0;
 
   DrawingController get controller => widget.controller;
 
@@ -54,14 +60,28 @@ class _StrokePanelState extends State<StrokePanel> {
           children: [
             PopoverHeader(
               'Stroke',
-              trailing: SegmentedButton<bool>(
+              trailing: SegmentedButton<_Kind>(
                 showSelectedIcon: false,
                 segments: const [
-                  ButtonSegment(value: false, label: Text('None')),
-                  ButtonSegment(value: true, label: Text('Color')),
+                  ButtonSegment(value: _Kind.none, label: Text('None')),
+                  ButtonSegment(value: _Kind.color, label: Text('Color')),
+                  ButtonSegment(value: _Kind.gradient, label: Text('Gradient')),
                 ],
-                selected: {stroke != null},
-                onSelectionChanged: (v) => set(v.single ? _lastStroke : null),
+                selected: {stroke == null ? _Kind.none : (stroke.gradient == null ? _Kind.color : _Kind.gradient)},
+                onSelectionChanged: (v) {
+                  final base = stroke ?? _lastStroke;
+                  switch (v.single) {
+                    case _Kind.none:
+                      set(null);
+                    case _Kind.color:
+                      set(base.withPaint(base.gradient?.stops[_stop.clamp(0, base.gradient!.stops.length - 1)].color ?? base.color));
+                    case _Kind.gradient:
+                      // From the current color to a neighbouring hue, along the shape.
+                      final from = base.color.withAlpha(1);
+                      _stop = 0;
+                      set(base.withPaint(InkGradient.between(from, from.adjustHsb(60, 0, 0))));
+                  }
+                },
               ),
             ),
             if (stroke != null) ...[
@@ -71,17 +91,31 @@ class _StrokePanelState extends State<StrokePanel> {
                   child: Container(
                     width: 52,
                     height: 52,
-                    decoration: BoxDecoration(border: Border.all(color: stroke.color.toColor(), width: 7)),
+                    decoration: BoxDecoration(border: Border.all(color: _editing(stroke).toColor(), width: 7)),
                   ),
                 ),
                 Expanded(
                   child: ColorEditor(
-                    color: stroke.color,
+                    color: _editing(stroke),
                     onChangeStart: c.checkpoint,
-                    onChanged: (color) => set(stroke.copyWith(color: color), record: false),
+                    onChanged: (color) {
+                      final g = stroke.gradient;
+                      set(g == null ? stroke.copyWith(color: color) : stroke.withPaint(g.withStopColor(_stop, color)), record: false);
+                    },
                   ),
                 ),
               ]),
+              if (stroke.gradient case final g?)
+                GradientControls(
+                  gradient: g,
+                  selected: _stop.clamp(0, g.stops.length - 1),
+                  onSelect: (i) => setState(() => _stop = i),
+                  onChangeStart: c.checkpoint,
+                  onChanged: (next, selected, {record = true}) {
+                    setState(() => _stop = selected);
+                    set(stroke.withPaint(next), record: record);
+                  },
+                ),
               const Divider(indent: 16, endIndent: 16),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -165,6 +199,12 @@ class _StrokePanelState extends State<StrokePanel> {
         );
       },
     );
+  }
+
+  /// The color being edited: the stroke's, or the selected gradient stop's.
+  InkColor _editing(StrokeStyle s) {
+    final g = s.gradient;
+    return g == null ? s.color : g.stops[_stop.clamp(0, g.stops.length - 1)].color;
   }
 
   static Color _glyphColor(bool selected, ColorScheme s) => selected ? s.primary : s.onSurface.withValues(alpha: 0.45);

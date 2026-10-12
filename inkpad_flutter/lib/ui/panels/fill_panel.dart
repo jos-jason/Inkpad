@@ -91,50 +91,15 @@ class _FillPanelState extends State<FillPanel> {
               ]),
             if (gradient != null) ...[
               const Divider(indent: 16, endIndent: 16),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Column(children: [
-                    SizedBox(width: 56, height: 56, child: CustomPaint(painter: _GradientPreview(gradient))),
-                    const SizedBox(height: 6),
-                    Row(children: [
-                      for (final type in GradientType.values)
-                        Tooltip(
-                          message: type == GradientType.linear ? 'Linear' : 'Radial',
-                          child: InkWell(
-                            onTap: () => _apply(gradient.copyWith(type: type)),
-                            child: Container(
-                              width: 26,
-                              height: 22,
-                              margin: const EdgeInsets.all(1),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: gradient.type == type ? Theme.of(context).colorScheme.primary : Colors.transparent,
-                                  width: 2,
-                                ),
-                                gradient: type == GradientType.linear
-                                    ? const LinearGradient(colors: [Colors.black, Colors.white])
-                                    : const RadialGradient(colors: [Colors.white, Colors.black]),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ]),
-                  ]),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: GradientStopsBar(
-                      gradient: gradient,
-                      selected: _stop,
-                      onSelect: (i) => setState(() => _stop = i),
-                      onChangeStart: c.checkpoint,
-                      onChanged: (g, selected) {
-                        setState(() => _stop = selected);
-                        _apply(g, record: false);
-                      },
-                    ),
-                  ),
-                ]),
+              GradientControls(
+                gradient: gradient,
+                selected: _stop,
+                onSelect: (i) => setState(() => _stop = i),
+                onChangeStart: c.checkpoint,
+                onChanged: (g, selected, {record = true}) {
+                  setState(() => _stop = selected);
+                  _apply(g, record: record);
+                },
               ),
             ],
             if (editing == null) const SizedBox(height: 12),
@@ -143,6 +108,72 @@ class _FillPanelState extends State<FillPanel> {
       },
     );
   }
+}
+
+/// A gradient's preview, linear/radial choice and stops bar, shared by the
+/// fill and stroke panels.
+class GradientControls extends StatelessWidget {
+  final InkGradient gradient;
+  final int selected;
+  final ValueChanged<int> onSelect;
+  final VoidCallback onChangeStart;
+
+  /// A new gradient (with the stop now selected); [record] is false while
+  /// a stop is being dragged.
+  final void Function(InkGradient gradient, int selected, {bool record}) onChanged;
+
+  const GradientControls({
+    super.key,
+    required this.gradient,
+    required this.selected,
+    required this.onSelect,
+    required this.onChangeStart,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Column(children: [
+            SizedBox(width: 56, height: 56, child: CustomPaint(painter: _GradientPreview(gradient))),
+            const SizedBox(height: 6),
+            Row(children: [
+              for (final type in GradientType.values)
+                Tooltip(
+                  message: type == GradientType.linear ? 'Linear' : 'Radial',
+                  child: InkWell(
+                    onTap: () => onChanged(gradient.copyWith(type: type), selected),
+                    child: Container(
+                      width: 26,
+                      height: 22,
+                      margin: const EdgeInsets.all(1),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: gradient.type == type ? Theme.of(context).colorScheme.primary : Colors.transparent,
+                          width: 2,
+                        ),
+                        gradient: type == GradientType.linear
+                            ? const LinearGradient(colors: [Colors.black, Colors.white])
+                            : const RadialGradient(colors: [Colors.white, Colors.black]),
+                      ),
+                    ),
+                  ),
+                ),
+            ]),
+          ]),
+          const SizedBox(width: 16),
+          Expanded(
+            child: GradientStopsBar(
+              gradient: gradient,
+              selected: selected,
+              onSelect: onSelect,
+              onChangeStart: onChangeStart,
+              onChanged: (g, i) => onChanged(g, i, record: false),
+            ),
+          ),
+        ]),
+      );
 }
 
 /// The gradient with a marker per stop. Tap a marker to select it, drag it

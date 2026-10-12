@@ -335,13 +335,15 @@ void main() {
       expect(s[2].fill, const InkColor(0, 1, 0));
     });
 
-    test('gradient outlines become a solid color, with a note', () {
+    test('gradient outlines stay gradients (with a middle color for swatches)', () {
       final r = importSvg(svg('''
         <linearGradient id="g"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></linearGradient>
         <rect width="10" height="10" fill="none" stroke="url(#g)"/>
       '''));
-      expect(shapes(r.drawing).single.stroke!.color.red, closeTo(0.5, 1e-9));
-      expect(r.warnings.single, contains('Gradient outlines'));
+      final stroke = shapes(r.drawing).single.stroke!;
+      expect(stroke.gradient!.stops.map((s) => s.color.red), [0, 1]);
+      expect(stroke.color.red, closeTo(0.5, 1e-9));
+      expect(r.warnings, isEmpty);
     });
 
     test('clip paths become clipping masks', () {

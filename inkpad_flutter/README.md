@@ -87,7 +87,10 @@ Done:
   duplicate in place, transform again, duplicate & transform again, delete
 - Arrange menu: forward/backward one step, front/back, flip, rotate 90°,
   distribute, group/ungroup, align left/center/right/top/middle/bottom
-- Stroke panel: HSB/alpha/hex color, caps, joins, width, dash & gap pairs,
+- Stroke panel: None / Color / Gradient (gradient outlines go beyond
+  Inkpad: linear or radial along the shape, turning with it; kept in SVG
+  import/export, Outline Stroke, the color menu and PDF), caps, joins,
+  width, dash & gap pairs,
   and arrowheads (Inkpad's 10: arrows, bar, circles, squares, diamonds;
   plus three chubby, rounded ones: arrow, notched arrow, open arrow; start
   and end chosen separately, Swap). Ported from WDArrowhead: the line
@@ -146,7 +149,7 @@ Done:
   Gradients and clip paths import as real gradients and clipping masks;
   embedded images are imported (with preserveAspectRatio);
   solid masks become clipping masks, soft masks (fades) are approximated with
-  even transparency; gradient outlines become a solid color; linked (not
+  even transparency; linked (not
   embedded) images are skipped. Text and text on a path import as editable
   text (one font per text object). Anything approximated is reported after import.
   Tested against ~3,000 real-world SVGs. "Place SVG…" in the editor adds an
@@ -156,7 +159,7 @@ Done:
 To port next (roughly in priority order; greyed out in the UI):
 - AI edit (placeholder button for now)
 - Per-letter styling (mixed fonts/colors within one text)
-- Releasing compound paths; gradient outlines (strokes)
+- Releasing compound paths
 - Full color picker
 
 ## Keyboard shortcuts
