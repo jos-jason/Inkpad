@@ -53,6 +53,27 @@ class FileDrawingStore implements DrawingStore {
     await tmp.rename(_file(d, info.id).path);
   }
 
+  /// The portfolio list lives beside the drawings.
+  @override
+  Future<List<PortfolioInfo>> loadPortfolios() async {
+    final f = File('${(await dir).path}/portfolios.json');
+    if (!await f.exists()) return [];
+    try {
+      return PortfolioInfo.decodeAll(await f.readAsString());
+    } catch (e) {
+      debugPrint('Could not read portfolios: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<void> savePortfolios(List<PortfolioInfo> all) async {
+    final d = await dir;
+    final tmp = File('${d.path}/portfolios.tmp');
+    await tmp.writeAsString(PortfolioInfo.encodeAll(all), flush: true);
+    await tmp.rename('${d.path}/portfolios.json');
+  }
+
   @override
   Future<void> delete(String id) async {
     final f = _file(await dir, id);

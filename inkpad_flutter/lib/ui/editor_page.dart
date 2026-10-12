@@ -509,7 +509,7 @@ class _EditorPageState extends State<EditorPage> {
         child: ListenableBuilder(
           listenable: view,
           builder: (context, _) => Tooltip(
-            message: 'Rename',
+            message: 'Rename drawing',
             child: InkWell(
               borderRadius: BorderRadius.circular(22),
               onTap: _rename,
@@ -517,11 +517,18 @@ class _EditorPageState extends State<EditorPage> {
                 constraints: BoxConstraints(maxWidth: compact ? double.infinity : 420),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-                  child: Text(
-                    '${widget.info.name} @ ${(view.scale * 100).round()}%',
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-                  ),
+                  // The name is tappable: the pencil says so.
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Flexible(
+                      child: Text(
+                        '${widget.info.name} @ ${(view.scale * 100).round()}%',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(Icons.edit_outlined, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ]),
                 ),
               ),
             ),

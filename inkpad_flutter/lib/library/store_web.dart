@@ -25,4 +25,10 @@ class PrefsDrawingStore implements DrawingStore {
 
   @override
   Future<void> delete(String id) => _prefs.remove('$_prefix$id');
+
+  @override
+  Future<List<PortfolioInfo>> loadPortfolios() async => PortfolioInfo.decodeAll(await _prefs.getString('portfolios'));
+
+  @override
+  Future<void> savePortfolios(List<PortfolioInfo> all) => _prefs.setString('portfolios', PortfolioInfo.encodeAll(all));
 }

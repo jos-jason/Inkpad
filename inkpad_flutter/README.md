@@ -140,7 +140,11 @@ Done:
 - Undo/redo, duplicate, group/ungroup, arrange, layers (add, delete, hide, lock)
 - Library of drawings (like Inkpad's gallery): thumbnails, newest first,
   new / open / rename / duplicate / delete, import `.svg` and `.inkpad` files.
-  Drawings autosave as you edit. Stored as `.inkpad` files in the app's
+  Drawings autosave as you edit. Search (by name, portfolio, or any text in
+  a drawing). Portfolios group drawings like folders: create, rename,
+  delete (keeping or deleting their drawings), "Move to Portfolio…", or
+  press and hold a drawing and drop it on a portfolio. Rename a drawing
+  from inside it by tapping its name at the top. Stored as `.inkpad` files in the app's
   support folder (browser storage on the web).
 - SVG and `.inkpad` export, copy SVG to clipboard
 - PNG export (1×–4×, white or transparent background) and vector PDF export
