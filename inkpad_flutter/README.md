@@ -148,6 +148,21 @@ Done:
   from inside it by tapping its name at the top. Stored as `.inkpad` files in the app's
   support folder (browser storage on the web).
 - SVG and `.inkpad` export, copy SVG to clipboard
+- AI (the ✨ button), with your own account: Claude (Anthropic), any
+  OpenAI-compatible service (OpenAI, OpenRouter, Groq, LM Studio, Gemini's
+  compatible endpoint…), or Ollama on your computer or network. Set it up
+  in Settings → AI services: address, API key (kept in the device's secure
+  storage), a quick model for edits and a drawing model. **Edit** describes
+  a change ("make the title red and bigger", "align these"); the quick
+  model answers with operations Inkpad checks and applies (fills,
+  gradients, strokes and arrowheads, opacity, shadows, moving, resizing,
+  rotating, aligning, arranging, grouping, text and fonts, new shapes).
+  **Draw** describes new artwork; the drawing model answers with SVG,
+  placed in the middle of the page or in the selected area. Results show
+  on the canvas at once: Keep, Undo, or say what to change. Models that
+  can see get a picture of the drawing; models without tool calling
+  answer in JSON instead. Requests go straight from the device to the
+  service, only when you ask (`lib/ai/`)
 - PNG export (1×–4×, white or transparent background) and vector PDF export
   (Share menu). The PDF keeps shapes, outlines, dashes, arrowheads,
   gradients, clipping masks, opacity and blend modes as vectors and embeds
@@ -169,7 +184,6 @@ Done:
 - Responsive layout (side panels on desktop/tablet, bottom bar on phones)
 
 To port next (roughly in priority order; greyed out in the UI):
-- AI edit (placeholder button for now)
 - Full color picker
 
 ## Keyboard shortcuts
@@ -192,6 +206,8 @@ center or breaks handle symmetry.
 - [glyph_path](https://pub.dev/packages/glyph_path) (reading TrueType/OpenType
   outlines, kerning and ligatures) — BSD 3-Clause
 - [pdf](https://pub.dev/packages/pdf) (writing PDF files) — Apache License 2.0
+- [http](https://pub.dev/packages/http) — BSD 3-Clause;
+  [flutter_secure_storage](https://pub.dev/packages/flutter_secure_storage) — BSD 3-Clause
 - [Lato](https://fonts.google.com/specimen/Lato) (bundled fallback font) —
   SIL Open Font License 1.1 (`assets/fonts/Lato-OFL.txt`)
 

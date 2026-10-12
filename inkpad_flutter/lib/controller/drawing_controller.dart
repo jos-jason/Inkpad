@@ -65,9 +65,47 @@ class DrawingController extends ChangeNotifier {
   /// Records the current document state so the next change can be undone.
   /// Call before mutating the drawing.
   void checkpoint() {
+    if (_batchDepth > 0) return; // part of a larger step
     _undoStack.add(drawing.encode(includeImages: false));
     if (_undoStack.length > _maxUndo) _undoStack.removeAt(0);
     _redoStack.clear();
+  }
+
+  int _batchDepth = 0;
+
+  /// Runs [changes] (which may use any commands) as one undo step.
+  void batch(void Function() changes) {
+    checkpoint();
+    _batchDepth++;
+    try {
+      changes();
+    } finally {
+      _batchDepth--;
+      notifyListeners();
+    }
+  }
+
+  /// Puts the drawing back as it was before the last undo step, and forgets
+  /// that step (no redo): for discarding a preview.
+  void discardLastStep() {
+    if (!canUndo) return;
+    _restore(_undoStack.removeLast());
+  }
+
+  /// Where the selected elements are (layer, index), to select them again
+  /// after the drawing is restored from a snapshot.
+  List<(int, int)> get selectionPositions => [
+        for (final (li, l) in drawing.layers.indexed)
+          for (final (ei, e) in l.elements.indexed)
+            if (selection.contains(e)) (li, ei),
+      ];
+
+  void selectPositions(List<(int, int)> positions) {
+    selection.clear();
+    for (final (li, ei) in positions) {
+      if (li < drawing.layers.length && ei < drawing.layers[li].elements.length) selection.add(drawing.layers[li].elements[ei]);
+    }
+    notifyListeners();
   }
 
   bool get canUndo => _undoStack.isNotEmpty;

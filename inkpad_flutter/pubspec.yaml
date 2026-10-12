@@ -43,8 +43,12 @@ dependencies:
   glyph_path: ^2.0.1
   pdf: ^3.13.1
   vector_math: ^2.4.3
+  http: ^1.6.0
+  flutter_secure_storage: ^11.2.0
 
 dev_dependencies:
+  integration_test:
+    sdk: flutter
   flutter_test:
     sdk: flutter
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../controller/drawing_controller.dart';
 import '../../model/drawing.dart';
+import '../ai/ai_settings_page.dart';
 import '../chrome/chrome.dart';
 
 /// Drawing settings. Ported in spirit from Inkpad's WDSettingsController.
@@ -20,6 +21,12 @@ class SettingsPanel extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const PopoverHeader('Settings'),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome_outlined),
+              title: const Text('AI services…'),
+              subtitle: const Text('Your own Claude, OpenAI-compatible or Ollama'),
+              onTap: () => AiSettingsPage.open(context),
+            ),
             SwitchListTile(
               title: const Text('Show rulers'),
               value: d.showRulers,

@@ -11,6 +11,7 @@ import '../model/element.dart';
 import '../geometry/pathfinder.dart';
 import '../model/style.dart';
 import '../tools/tool.dart';
+import 'ai/ai_panel.dart';
 import 'chrome/chrome.dart';
 import 'chrome/color_editor.dart';
 import 'chrome/rulers.dart';
@@ -642,12 +643,13 @@ class _EditorPageState extends State<EditorPage> {
             onPressed: () => _panel(b, FillPanel(controller: c), width: 460),
           ),
         ),
-        if (!compact)
-          const IconButton(
-            tooltip: 'AI edit (coming soon)',
-            onPressed: null,
-            icon: Icon(Icons.auto_awesome_outlined),
+        Builder(
+          builder: (b) => IconButton(
+            tooltip: 'AI',
+            icon: const Icon(Icons.auto_awesome_outlined),
+            onPressed: () => _panel(b, AiPanel(controller: c), width: 440),
           ),
+        ),
         Builder(
           builder: (b) => compact
               ? IconButton(tooltip: 'Layers', icon: const Icon(Icons.layers_outlined), onPressed: () => _panel(b, LayersPanel(controller: c)))
