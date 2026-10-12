@@ -18,6 +18,7 @@ import 'chrome/tool_icons.dart';
 import 'chrome/tool_palette.dart';
 import 'drawing_canvas.dart';
 import 'file_actions.dart';
+import 'panels/color_adjust_panels.dart';
 import 'panels/fill_panel.dart';
 import 'panels/layers_panel.dart';
 import 'panels/misc_panels.dart';
@@ -335,6 +336,29 @@ class _EditorPageState extends State<EditorPage> {
     ];
   }
 
+  /// Ported from Inkpad's color menu (WDCanvasController showColorMenu:).
+  List<MenuEntry> _colorMenu() {
+    final c = controller;
+    MenuAction blend(String label, ColorBlend d) => MenuAction(label, c.canBlendColors(d) ? () => c.blendColors(d) : null);
+    void adjust(Widget panel) => WidgetsBinding.instance.addPostFrameCallback((_) {
+          // After the menu closes, from the same button.
+          if (mounted) _panel(_colorButton.currentContext ?? context, panel, width: 420);
+        });
+    return [
+      blend('Blend Back to Front', ColorBlend.backToFront),
+      blend('Blend Horizontally', ColorBlend.horizontally),
+      blend('Blend Vertically', ColorBlend.vertically),
+      const MenuDivider(),
+      MenuAction('Color Balance…', c.canAdjustColors ? () => adjust(ColorBalancePanel(controller: c)) : null),
+      MenuAction('Hue and Saturation…', c.canAdjustColors ? () => adjust(HueSaturationPanel(controller: c)) : null),
+      const MenuDivider(),
+      MenuAction('Desaturate', c.canAdjustColors ? c.desaturate : null),
+      MenuAction('Invert', c.canAdjustColors ? c.invertColors : null),
+    ];
+  }
+
+  final _colorButton = GlobalKey();
+
   void _combine(BooleanOp op) {
     final before = controller.selection.length;
     controller.combineShapes(op);
@@ -441,11 +465,29 @@ class _EditorPageState extends State<EditorPage> {
                             Flexible(child: FittedBox(fit: BoxFit.scaleDown, child: _stylePill(compact))),
                           ]),
                         )
-                      else ...[
-                        Align(alignment: Alignment.bottomLeft, child: _menusPill(compact)),
-                        Align(alignment: Alignment.bottomCenter, child: _undoPill()),
-                        Align(alignment: Alignment.bottomRight, child: _stylePill(compact)),
-                      ],
+                      else
+                        // Undo stays centered; the side pills shrink if the
+                        // window is too narrow for all three.
+                        Align(
+                          alignment: Alignment.bottomCenter,
+                          child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.bottomLeft,
+                                child: FittedBox(fit: BoxFit.scaleDown, child: _menusPill(compact)),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            _undoPill(),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.bottomRight,
+                                child: FittedBox(fit: BoxFit.scaleDown, child: _stylePill(compact)),
+                              ),
+                            ),
+                          ]),
+                        ),
                     ]),
                   ),
                 ),
@@ -540,11 +582,14 @@ class _EditorPageState extends State<EditorPage> {
           Builder(builder: (b) => PillTextButton('Edit', onPressed: () => _menu(b, _editMenu))),
           Builder(builder: (b) => PillTextButton('Arrange', onPressed: () => _menu(b, _arrangeMenu))),
           Builder(builder: (b) => PillTextButton('Path', onPressed: () => _menu(b, _pathMenu))),
-          if (!compact)
-            const Tooltip(
-              message: 'Color (coming soon)',
-              child: Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Opacity(opacity: 0.35, child: _ColorWheel())),
+          Builder(
+            key: _colorButton,
+            builder: (b) => IconButton(
+              tooltip: 'Color',
+              icon: const _ColorWheel(),
+              onPressed: () => _menu(b, _colorMenu),
             ),
+          ),
         ]),
       );
 

@@ -90,6 +90,26 @@ class InkColor implements InkPaint {
     return (h * 60 + 360) % 360;
   }
 
+  /// Shifts hue by [hueShift] degrees and scales saturation and brightness
+  /// by 1 + shift (shifts are -1..1). Ported from -[WDColor adjustHue:...].
+  InkColor adjustHsb(double hueShift, double saturationShift, double brightnessShift) => InkColor.hsb(
+        hue + hueShift,
+        (saturation * (1 + saturationShift)).clamp(0.0, 1.0),
+        (brightness * (1 + brightnessShift)).clamp(0.0, 1.0),
+        alpha,
+      );
+
+  /// Adds the shifts (-1..1) to each channel. Ported from
+  /// -[WDColor colorBalanceRed:green:blue:].
+  InkColor balance(double redShift, double greenShift, double blueShift) => InkColor(
+        (red + redShift).clamp(0.0, 1.0),
+        (green + greenShift).clamp(0.0, 1.0),
+        (blue + blueShift).clamp(0.0, 1.0),
+        alpha,
+      );
+
+  InkColor get inverted => InkColor(1 - red, 1 - green, 1 - blue, alpha);
+
   /// Linear interpolation towards [other].
   InkColor lerp(InkColor other, double t) => InkColor(
         red + (other.red - red) * t,

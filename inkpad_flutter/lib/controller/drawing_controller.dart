@@ -1133,6 +1133,149 @@ class DrawingController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---- Color menu (ported from WDDrawingController's color actions) --------
+
+  /// Filled shapes to blend, back to front, including inside groups and
+  /// masks. Ported from -[WDDrawingController blendables].
+  List<InkStylable> get blendables {
+    final out = <InkStylable>[];
+    void add(InkElement e) {
+      if (e is InkGroup) {
+        e.elements.forEach(add);
+      } else if (e is InkStylable) {
+        if (e.fill != null) out.add(e);
+        e.maskedElements.forEach(add);
+      }
+    }
+
+    orderedSelection.forEach(add);
+    return out;
+  }
+
+  /// The blendables in the order [direction] blends them.
+  List<InkStylable> _blendOrder(ColorBlend direction) {
+    final b = blendables;
+    switch (direction) {
+      case ColorBlend.backToFront:
+        return b;
+      case ColorBlend.horizontally:
+        return b..sort((x, y) => x.bounds.center.dx.compareTo(y.bounds.center.dx));
+      case ColorBlend.vertically:
+        return b..sort((x, y) => x.bounds.center.dy.compareTo(y.bounds.center.dy));
+    }
+  }
+
+  /// Blending needs three or more shapes, the first and last filled with
+  /// solid colors.
+  bool canBlendColors(ColorBlend direction) {
+    final b = _blendOrder(direction);
+    return b.length >= 3 && b.first.fill is InkColor && b.last.fill is InkColor;
+  }
+
+  /// Fills the shapes between the first and last with the colors in
+  /// between: in stacking order, or by position across or down the page.
+  void blendColors(ColorBlend direction) {
+    if (!canBlendColors(direction)) return;
+    final b = _blendOrder(direction);
+    final first = b.first.fill as InkColor, last = b.last.fill as InkColor;
+    double fraction(int i, InkStylable e) {
+      switch (direction) {
+        case ColorBlend.backToFront:
+          return i / (b.length - 1);
+        case ColorBlend.horizontally:
+          final start = b.first.bounds.center.dx, end = b.last.bounds.center.dx;
+          return end == start ? 0 : (e.bounds.center.dx - start) / (end - start);
+        case ColorBlend.vertically:
+          final start = b.first.bounds.center.dy, end = b.last.bounds.center.dy;
+          return end == start ? 0 : (e.bounds.center.dy - start) / (end - start);
+      }
+    }
+
+    checkpoint();
+    for (final (i, e) in b.indexed) {
+      e.fill = first.lerp(last, fraction(i, e));
+    }
+    notifyListeners();
+  }
+
+  /// Fill, stroke and shadow colors of the selection (inside groups and
+  /// masks too), with the element each belongs to.
+  Iterable<InkElement> get _colored sync* {
+    for (final e in selection) {
+      for (final d in e.selfAndDescendants) {
+        if (d.shadow != null || (d is InkStylable && (d.fill != null || d.stroke != null))) yield d;
+      }
+    }
+  }
+
+  bool get canAdjustColors => _colored.isNotEmpty;
+
+  /// The original colors while an adjustment panel is open.
+  List<(InkElement, InkPaint?, StrokeStyle?, InkShadow?)>? _colorBase;
+
+  /// Starts a live adjustment (Color Balance, Hue and Saturation): one undo
+  /// step, previewed on the drawing as the sliders move.
+  void beginColorAdjustment() {
+    checkpoint();
+    _colorBase = [
+      for (final e in _colored) (e, e is InkStylable ? e.fill : null, e is InkStylable ? e.stroke : null, e.shadow),
+    ];
+  }
+
+  /// Shows the selection with [adjust] applied to its original colors.
+  void previewColorAdjustment(InkColor Function(InkColor) adjust) {
+    final base = _colorBase;
+    if (base == null) return;
+    for (final (e, fill, stroke, shadow) in base) {
+      _applyColors(e, fill, stroke, shadow, adjust);
+    }
+    notifyListeners();
+  }
+
+  /// Keeps the adjustment, or puts the colors back if [cancel] is true.
+  void endColorAdjustment({bool cancel = false}) {
+    final base = _colorBase;
+    if (base == null) return;
+    _colorBase = null;
+    final changed = base.any((r) {
+      final (e, fill, stroke, shadow) = r;
+      return e is InkStylable && (e.fill != fill || e.stroke != stroke) || e.shadow != shadow;
+    });
+    if (cancel || !changed) {
+      for (final (e, fill, stroke, shadow) in base) {
+        _applyColors(e, fill, stroke, shadow, (c) => c);
+      }
+      if (_undoStack.isNotEmpty) _undoStack.removeLast(); // nothing to undo
+      if (cancel) notifyListeners();
+    }
+  }
+
+  /// Applies [adjust] to every color of the selection as one undo step.
+  void adjustColors(InkColor Function(InkColor) adjust) {
+    if (!canAdjustColors) return;
+    checkpoint();
+    for (final e in _colored.toList()) {
+      _applyColors(e, e is InkStylable ? e.fill : null, e is InkStylable ? e.stroke : null, e.shadow, adjust);
+    }
+    notifyListeners();
+  }
+
+  void desaturate() => adjustColors((c) => c.adjustHsb(0, -1, 0));
+
+  void invertColors() => adjustColors((c) => c.inverted);
+
+  static void _applyColors(InkElement e, InkPaint? fill, StrokeStyle? stroke, InkShadow? shadow, InkColor Function(InkColor) adjust) {
+    if (e is InkStylable) {
+      e.fill = switch (fill) {
+        InkColor c => adjust(c),
+        InkGradient g => g.copyWith(stops: [for (final s in g.stops) GradientStop(s.offset, adjust(s.color))]),
+        _ => fill,
+      };
+      e.stroke = stroke?.copyWith(color: adjust(stroke.color));
+    }
+    e.shadow = shadow?.copyWith(color: adjust(shadow.color));
+  }
+
   // ---- Rotate and flip --------------------------------------------------
 
   /// Rotates the selection about its center; positive is clockwise on screen.
@@ -1312,3 +1455,6 @@ class DrawingController extends ChangeNotifier {
     notifyListeners();
   }
 }
+
+/// The color menu's blend directions.
+enum ColorBlend { backToFront, horizontally, vertically }

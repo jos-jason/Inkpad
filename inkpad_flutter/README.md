@@ -97,6 +97,12 @@ Done:
   current settings. Exported to SVG as `feDropShadow` filters and
   `mix-blend-mode`; drop shadows (including the blur + offset recipe) and
   blend modes import back
+- Color menu (the color wheel; port of Inkpad's color actions): blend
+  colors back to front, horizontally or vertically across three or more
+  shapes; Color Balance… and Hue and Saturation… with live preview (Cancel
+  puts the colors back); Desaturate; Invert. Adjustments reach fills,
+  gradient stops, outlines and shadows, inside groups and masks too (images
+  are left as they are, as in Inkpad)
 - Rulers in in/cm/mm/pt/px (Settings)
 - Scale tool (port of WDScaleTool), alongside the scale handles
 - Rotation: the knob above a selection (select tool), or the Rotate tool
@@ -132,8 +138,6 @@ Done:
 - Responsive layout (side panels on desktop/tablet, bottom bar on phones)
 
 To port next (roughly in priority order; greyed out in the UI):
-- Color menu (color wheel): blend back to front / horizontally / vertically,
-  color balance, hue & saturation, desaturate, invert
 - AI edit (placeholder button for now)
 - Arrowheads; per-letter styling (mixed fonts/colors within one text)
 - Releasing compound paths; gradient outlines (strokes)
