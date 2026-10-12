@@ -35,7 +35,7 @@ abstract class TransformTool extends Tool {
 
   @override
   void begin(DrawingController c, ToolEvent e) {
-    _start = e.point;
+    _start = c.snapWithFeedback(e.point, e.snapTolerance).point;
     _moved = false;
     _applied = Affine.identity;
   }
@@ -48,7 +48,8 @@ abstract class TransformTool extends Tool {
       c.checkpoint();
       _moved = true;
     }
-    final t = computeTransform(_start, e.point, p, shift: e.shift);
+    final pt = c.snapWithFeedback(e.point, e.snapTolerance, skip: c.selection.contains).point;
+    final t = computeTransform(_start, pt, p, shift: e.shift);
     // Apply only the change since the last move, so rounding never builds up.
     c.transformSelection(_applied.inverted().then(t));
     _applied = t;
@@ -64,7 +65,7 @@ abstract class TransformTool extends Tool {
     // A tap moves the pivot.
     if (c.selection.isNotEmpty) {
       pivot(c);
-      _pivot = e.point;
+      _pivot = _start; // snapped
       c.changed();
     }
   }

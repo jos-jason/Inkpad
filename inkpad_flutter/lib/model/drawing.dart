@@ -91,6 +91,11 @@ class InkDrawing {
   /// Ported from WDDrawing's rulersVisible setting.
   bool showRulers;
 
+  /// Snapping and the grid, ported from WDDrawing's settings (all off by
+  /// default, with a 36 pt grid, as in Inkpad).
+  bool snapToPoints, snapToEdges, snapToGrid, showGrid;
+  double gridSpacing;
+
   /// Document units (points) per ruler unit.
   static const unitSizes = {'in': 72.0, 'cm': 72 / 2.54, 'mm': 72 / 25.4, 'pt': 1.0, 'px': 1.0};
 
@@ -101,6 +106,11 @@ class InkDrawing {
     this.activeLayerIndex = 0,
     this.units = 'in',
     this.showRulers = true,
+    this.snapToPoints = false,
+    this.snapToEdges = false,
+    this.snapToGrid = false,
+    this.showGrid = false,
+    this.gridSpacing = 36,
   }) : layers = layers ?? [InkLayer(name: 'Layer 1')];
 
   Rect get bounds => Rect.fromLTWH(0, 0, width, height);
@@ -187,6 +197,8 @@ class InkDrawing {
         'activeLayer': activeLayerIndex,
         'units': units,
         'rulers': showRulers,
+        'snap': {'points': snapToPoints, 'edges': snapToEdges, 'grid': snapToGrid},
+        'grid': {'show': showGrid, 'spacing': gridSpacing},
         'layers': layers.map((l) => l.toJson()).toList(),
         if (includeImages && images.isNotEmpty)
           'images': {for (final d in images) d.id: base64Encode(d.bytes)},
@@ -203,6 +215,11 @@ class InkDrawing {
       activeLayerIndex: j['activeLayer'],
       units: j['units'] as String? ?? 'in',
       showRulers: j['rulers'] as bool? ?? true,
+      snapToPoints: j['snap']?['points'] as bool? ?? false,
+      snapToEdges: j['snap']?['edges'] as bool? ?? false,
+      snapToGrid: j['snap']?['grid'] as bool? ?? false,
+      showGrid: j['grid']?['show'] as bool? ?? false,
+      gridSpacing: (j['grid']?['spacing'] as num?)?.toDouble() ?? 36,
       layers: (j['layers'] as List).map((l) => InkLayer.fromJson(l)).toList(),
     );
   }

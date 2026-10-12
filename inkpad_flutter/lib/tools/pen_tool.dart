@@ -51,7 +51,7 @@ class PenTool extends Tool {
       _oldMode = _replacement!.reflectionMode;
       _closingPath = true;
     } else {
-      _replacement = BezierNode.anchor(e.point);
+      _replacement = BezierNode.anchor(c.snapWithFeedback(e.point, e.snapTolerance).point);
       if (active == null) {
         active = c.styledPath(InkPath(nodes: []));
         c.addElement(active);
@@ -68,14 +68,18 @@ class PenTool extends Tool {
   void move(DrawingController c, ToolEvent e) {
     _moved = true;
     final r = _replacement!;
+    // Handles snap too, but not onto the node they belong to.
+    final index = _closingPath ? 0 : (_updatingOldNode ? _baseNodes.length - 1 : _baseNodes.length);
+    final active = c.activePath;
+    final pt = c.snapWithFeedback(e.point, e.snapTolerance, skipNode: (p, i) => identical(p, active) && i == index).point;
     if (_closingPath) {
       final mode = e.alt ? ReflectionMode.independent : _oldMode;
-      _replacement = r.setInPoint(e.point, mode);
+      _replacement = r.setInPoint(pt, mode);
     } else {
       final mode = e.alt
           ? ReflectionMode.independent
           : (_updatingOldNode ? _oldMode : ReflectionMode.reflect);
-      _replacement = r.moveControlHandle(HandleKind.outPoint, e.point, mode);
+      _replacement = r.moveControlHandle(HandleKind.outPoint, pt, mode);
     }
     _apply(c);
   }

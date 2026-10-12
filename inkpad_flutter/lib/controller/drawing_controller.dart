@@ -11,6 +11,9 @@ import '../model/geometry.dart';
 import '../model/style.dart';
 import '../text/font_library.dart';
 import '../tools/tool.dart';
+import 'snapping.dart';
+
+export 'snapping.dart';
 
 /// Ported from WDAlignment.
 enum AlignEdge { left, center, right, top, middle, bottom }
@@ -50,6 +53,9 @@ class DrawingController extends ChangeNotifier {
     _tool = t;
     notifyListeners();
   }
+
+  /// Where the point being dragged snapped to, shown on the canvas.
+  SnapResult? snapFeedback;
 
   /// Notify listeners that the document or selection changed.
   void changed() => notifyListeners();

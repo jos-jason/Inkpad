@@ -103,9 +103,16 @@ class DrawingCanvasState extends State<DrawingCanvas> {
 
   void actualSize() => zoomBy(1 / _scale);
 
-  ToolEvent _event(Offset screen, {int count = 1}) {
+  ToolEvent _event(PointerEvent e, {int count = 1}) {
     final keys = HardwareKeyboard.instance;
-    return ToolEvent(toDoc(screen), _scale, shift: keys.isShiftPressed, alt: keys.isAltPressed, count: count);
+    return ToolEvent(
+      toDoc(e.localPosition),
+      _scale,
+      shift: keys.isShiftPressed,
+      alt: keys.isAltPressed,
+      count: count,
+      touch: e.kind == PointerDeviceKind.touch,
+    );
   }
 
   // Click counting, for double clicks and double taps.
@@ -127,6 +134,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
 
   void _onDown(PointerDownEvent e) {
     _pointers[e.pointer] = e.localPosition;
+    c.snapFeedback = null;
 
     if (_pointers.length == 2) {
       // Second finger: abandon any tool gesture and start pinch/pan.
@@ -149,7 +157,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       _panning = true;
     } else {
       _toolPointer = e.pointer;
-      c.tool.begin(c, _event(e.localPosition, count: _countTap(e)));
+      c.tool.begin(c, _event(e, count: _countTap(e)));
     }
   }
 
@@ -170,7 +178,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
     } else if (_panning) {
       setState(() => _offset += e.delta);
     } else if (e.pointer == _toolPointer) {
-      c.tool.move(c, _event(e.localPosition));
+      c.tool.move(c, _event(e));
     }
   }
 
@@ -180,9 +188,13 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       if (e is PointerCancelEvent) {
         c.tool.cancel(c);
       } else {
-        c.tool.end(c, _event(e.localPosition));
+        c.tool.end(c, _event(e));
       }
       _toolPointer = null;
+      if (c.snapFeedback != null) {
+        c.snapFeedback = null;
+        c.changed();
+      }
     }
     if (_pointers.isEmpty) _panning = false;
   }
@@ -311,12 +323,59 @@ class _CanvasPainter extends CustomPainter {
     canvas.drawRect(board, Paint()..color = Colors.white);
 
     final visible = Rect.fromLTWH(-offset.dx / scale, -offset.dy / scale, size.width / scale, size.height / scale);
+    if (drawing.showGrid) _paintGrid(canvas, visible);
     drawing.render(canvas, visible);
 
     _paintSelection(canvas);
     controller.tool.paintOverlay(canvas, controller, scale);
+    _paintSnap(canvas);
 
     canvas.restore();
+  }
+
+  /// The grid over the page, under the drawing. Ported from -[WDCanvas
+  /// drawGrid:]: lines never closer than 10 screen pixels.
+  void _paintGrid(Canvas canvas, Rect visible) {
+    final d = controller.drawing;
+    final area = visible.intersect(d.bounds);
+    if (area.isEmpty || d.gridSpacing <= 0) return;
+    var spacing = d.gridSpacing;
+    if (spacing * scale < 10) spacing *= (10 / (spacing * scale)).ceilToDouble();
+    final paint = Paint()
+      ..color = const Color(0x20000000)
+      ..strokeWidth = 1 / scale;
+    for (var x = (area.left / spacing).ceilToDouble() * spacing; x <= area.right; x += spacing) {
+      canvas.drawLine(Offset(x, 0), Offset(x, d.height), paint);
+    }
+    for (var y = (area.top / spacing).ceilToDouble() * spacing; y <= area.bottom; y += spacing) {
+      canvas.drawLine(Offset(0, y), Offset(d.width, y), paint);
+    }
+  }
+
+  /// Where the dragged point snapped: a square on a point, a circle on an
+  /// edge, a small cross on the grid.
+  void _paintSnap(Canvas canvas) {
+    final s = controller.snapFeedback;
+    if (s == null) return;
+    final px = 1 / scale;
+    final p = s.point;
+    final ring = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5 * px
+      ..color = const Color(0xFFFF2D78);
+    final halo = Paint()..color = const Color(0xCCFFFFFF);
+    switch (s.kind!) {
+      case SnapKind.point:
+        final r = Rect.fromCenter(center: p, width: 10 * px, height: 10 * px);
+        canvas.drawRect(r.inflate(px), halo);
+        canvas.drawRect(r, ring);
+      case SnapKind.edge:
+        canvas.drawCircle(p, 6 * px, halo);
+        canvas.drawCircle(p, 5 * px, ring);
+      case SnapKind.grid:
+        canvas.drawLine(p - Offset(5 * px, 0), p + Offset(5 * px, 0), ring);
+        canvas.drawLine(p - Offset(0, 5 * px), p + Offset(0, 5 * px), ring);
+    }
   }
 
   void _paintSelection(Canvas canvas) {

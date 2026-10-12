@@ -23,7 +23,7 @@ class DirectSelectTool extends Tool {
   String get name => 'Direct Select';
 
   _Mode _mode = _Mode.none;
-  Offset _start = Offset.zero, _last = Offset.zero;
+  Offset _start = Offset.zero;
   bool _checkpointed = false;
 
   InkPath? _handlePath;
@@ -34,10 +34,17 @@ class DirectSelectTool extends Tool {
   Rect? marquee;
   Map<InkPath, Set<int>> _base = {};
 
+  /// The point grabbed (it snaps; the other selected points follow), and
+  /// how far the points have moved.
+  Offset? _grabAnchor;
+  Offset _moved = Offset.zero;
+
   @override
   void begin(DrawingController c, ToolEvent e) {
-    _start = _last = e.point;
+    _start = e.point;
     _checkpointed = false;
+    _grabAnchor = null;
+    _moved = Offset.zero;
     final tol = e.slop();
     final paths = c.pathOwners().keys.toList().reversed; // topmost first
 
@@ -84,6 +91,7 @@ class DirectSelectTool extends Tool {
       }
       c.setSelectedNodes(next);
       _mode = _Mode.nodes;
+      _grabAnchor = path.nodes[i].anchorPoint;
       return;
     }
 
@@ -117,22 +125,31 @@ class DirectSelectTool extends Tool {
 
   @override
   void move(DrawingController c, ToolEvent e) {
-    final delta = e.point - _last;
-    _last = e.point;
     switch (_mode) {
       case _Mode.nodes:
         _ensureCheckpoint(c);
+        var want = e.point - _start;
+        final grab = _grabAnchor;
+        if (grab != null) {
+          final selected = c.selectedNodes;
+          final r = c.snapWithFeedback(grab + want, e.snapTolerance, skipNode: (p, i) => selected[p]?.contains(i) ?? false);
+          want = r.point - grab;
+        }
+        final step = want - _moved;
+        _moved = want;
         for (final MapEntry(key: path, value: indices) in c.selectedNodes.entries) {
           for (final i in indices) {
-            if (i < path.nodes.length) path.nodes[i] = path.nodes[i].moveAnchor(delta);
+            if (i < path.nodes.length) path.nodes[i] = path.nodes[i].moveAnchor(step);
           }
         }
         c.changed();
       case _Mode.handle:
         _ensureCheckpoint(c);
         final p = _handlePath!;
+        final i = _handleIndex;
         final mode = e.alt ? ReflectionMode.independent : _reflection;
-        p.nodes[_handleIndex] = p.nodes[_handleIndex].moveControlHandle(_handle, e.point, mode);
+        final to = c.snapWithFeedback(e.point, e.snapTolerance, skipNode: (path, j) => identical(path, p) && j == i).point;
+        p.nodes[i] = p.nodes[i].moveControlHandle(_handle, to, mode);
         c.changed();
       case _Mode.marquee:
         final r = rectFromPoints(_start, e.point);

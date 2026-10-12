@@ -40,7 +40,7 @@ class ShapeTool extends Tool {
 
   @override
   void begin(DrawingController c, ToolEvent e) {
-    _start = e.point;
+    _start = c.snapWithFeedback(e.point, e.snapTolerance).point;
     _shape = null;
   }
 
@@ -62,7 +62,8 @@ class ShapeTool extends Tool {
   }
 
   InkPath _build(DrawingController c, ToolEvent e) {
-    var end = e.point;
+    // Snap the dragged corner, ignoring the shape being drawn.
+    var end = c.snapWithFeedback(e.point, e.snapTolerance, skip: (el) => identical(el, _shape)).point;
 
     if (kind == ShapeKind.spiral) return _spiral(_start, end);
 

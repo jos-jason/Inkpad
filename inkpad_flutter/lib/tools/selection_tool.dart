@@ -17,7 +17,6 @@ class SelectionTool extends Tool {
 
   _Mode _mode = _Mode.none;
   Offset _start = Offset.zero;
-  Offset _last = Offset.zero;
   bool _checkpointed = false;
 
   // Node editing state.
@@ -65,9 +64,40 @@ class SelectionTool extends Tool {
   Rect? marquee;
   Set<InkElement> _baseSelection = {};
 
+  // Snapping while moving: the selection's own point under the pointer
+  // (which then snaps to other points and edges), the bounds at the start
+  // (whose corners snap to the grid), and how far it has moved so far.
+  Offset? _grabPoint;
+  Rect _startBounds = Rect.zero;
+  Offset _moved = Offset.zero;
+  Offset _anchorStart = Offset.zero;
+
+  /// The nearest anchor point of the selection within [tol] of [p].
+  static Offset? _ownPointNear(DrawingController c, Offset p, double tol) {
+    Offset? best;
+    var bestD = tol;
+    void path(InkPath path) {
+      for (final n in path.nodes) {
+        final d = (n.anchorPoint - p).distance;
+        if (d < bestD) {
+          bestD = d;
+          best = n.anchorPoint;
+        }
+      }
+    }
+
+    for (final e in c.selection) {
+      for (final d in e.selfAndDescendants) {
+        if (d is InkPath) path(d);
+        if (d is InkCompoundPath) d.subpaths.forEach(path);
+      }
+    }
+    return best;
+  }
+
   @override
   void begin(DrawingController c, ToolEvent e) {
-    _start = _last = e.point;
+    _start = e.point;
     _checkpointed = false;
     final tol = e.slop();
 
@@ -152,6 +182,9 @@ class SelectionTool extends Tool {
       }
       if (!c.selection.contains(hit)) c.select(hit, extend: e.shift);
       _mode = _Mode.move;
+      _moved = Offset.zero;
+      _startBounds = c.selectionBounds ?? Rect.zero;
+      _grabPoint = _ownPointNear(c, e.point, e.snapTolerance);
       return;
     }
 
@@ -178,6 +211,7 @@ class SelectionTool extends Tool {
         _nodeIndex = i;
         _handle = kind;
         _originalMode = n.reflectionMode;
+        _anchorStart = n.anchorPoint;
         _mode = kind == HandleKind.anchor ? _Mode.anchor : _Mode.handle;
         return true;
       }
@@ -193,30 +227,35 @@ class SelectionTool extends Tool {
 
   @override
   void move(DrawingController c, ToolEvent e) {
-    final delta = e.point - _last;
-    _last = e.point;
-
     switch (_mode) {
       case _Mode.move:
         _ensureCheckpoint(c);
-        c.transformSelection(Affine.translation(delta.dx, delta.dy));
+        final want = _snappedMove(c, e);
+        final step = want - _moved;
+        _moved = want;
+        c.transformSelection(Affine.translation(step.dx, step.dy));
       case _Mode.anchor:
         _ensureCheckpoint(c);
         final p = _path!;
-        p.nodes[_nodeIndex] = p.nodes[_nodeIndex].moveAnchor(delta);
+        final i = _nodeIndex;
+        final to = c.snapWithFeedback(_anchorStart + (e.point - _start), e.snapTolerance,
+            skipNode: (path, j) => identical(path, p) && j == i).point;
+        p.nodes[i] = p.nodes[i].moveAnchor(to - p.nodes[i].anchorPoint);
         c.changed();
       case _Mode.handle:
         _ensureCheckpoint(c);
         final p = _path!;
+        final i = _nodeIndex;
         final mode = e.alt ? ReflectionMode.independent : _originalMode;
-        p.nodes[_nodeIndex] = p.nodes[_nodeIndex].moveControlHandle(_handle, e.point, mode);
+        final to = c.snapWithFeedback(e.point, e.snapTolerance, skipNode: (path, j) => identical(path, p) && j == i).point;
+        p.nodes[i] = p.nodes[i].moveControlHandle(_handle, to, mode);
         c.changed();
       case _Mode.gradientStart || _Mode.gradientEnd:
         _ensureCheckpoint(c);
         c.moveGradientHandle(_gradientShape!, start: _mode == _Mode.gradientStart, to: e.point);
       case _Mode.scale:
         _ensureCheckpoint(c);
-        final t = _scaleTransform(e);
+        final t = _scaleTransform(c, e);
         // Apply only the change since the last move, so rounding never builds up.
         c.transformSelection(_applied.inverted().then(t));
         _applied = t;
@@ -244,15 +283,35 @@ class SelectionTool extends Tool {
     }
   }
 
+  /// How far to move the selection: the drag, snapped. A point of the
+  /// selection under the pointer snaps to other points and edges; failing
+  /// that, the nearest corner of its bounds snaps to the grid (Inkpad's
+  /// -offsetSelection:).
+  Offset _snappedMove(DrawingController c, ToolEvent e) {
+    final raw = e.point - _start;
+    final grab = _grabPoint;
+    if (grab != null) {
+      final r = c.snap(grab + raw, e.snapTolerance, skip: c.selection.contains, grid: false);
+      if (r.snapped) {
+        c.snapFeedback = r;
+        return r.point - grab;
+      }
+    }
+    c.snapFeedback = null;
+    if (c.drawing.snapToGrid) return c.gridOffset(_startBounds, raw);
+    return raw;
+  }
+
   /// Scales about the opposite corner (or the center with Alt), keeping
   /// proportions unless Shift is held.
-  Affine _scaleTransform(ToolEvent e) {
+  Affine _scaleTransform(DrawingController c, ToolEvent e) {
     final corners = _corners(_scaleBounds);
     final corner = corners[_scaleCorner];
     final anchor = e.alt ? _scaleBounds.center : corners[(_scaleCorner + 2) % 4];
     // The handle sits just outside the corner, so follow the drag distance
-    // rather than the pointer position, or the first move would jump.
-    final target = corner + (e.point - _grab);
+    // rather than the pointer position, or the first move would jump. The
+    // corner snaps (to anything but the selection itself).
+    final target = c.snapWithFeedback(corner + (e.point - _grab), e.snapTolerance, skip: c.selection.contains).point;
     final dx = corner.dx - anchor.dx, dy = corner.dy - anchor.dy;
     var sx = dx == 0 ? 1.0 : (target.dx - anchor.dx) / dx;
     var sy = dy == 0 ? 1.0 : (target.dy - anchor.dy) / dy;
@@ -272,8 +331,7 @@ class SelectionTool extends Tool {
     if (_checkpointed) {
       switch (_mode) {
         case _Mode.move:
-          final d = _last - _start;
-          c.recordTransform(Affine.translation(d.dx, d.dy));
+          c.recordTransform(Affine.translation(_moved.dx, _moved.dy));
         case _Mode.scale || _Mode.rotate:
           c.recordTransform(_applied);
         default:

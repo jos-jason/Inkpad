@@ -109,6 +109,10 @@ Done:
   puts the colors back); Desaturate; Invert. Adjustments reach fills,
   gradient stops, outlines and shadows, inside groups and masks too (images
   are left as they are, as in Inkpad)
+- Snapping (Settings), ported from Inkpad: Snap to Points, Snap to Edges
+  (including the page edges), Snap to Grid, Show Grid and Grid Spacing.
+  Shapes, lines, pen points and handles, text boxes, dragged points and
+  moved or scaled selections snap; a marker shows what was snapped to
 - Rulers in in/cm/mm/pt/px (Settings)
 - Scale tool (port of WDScaleTool), alongside the scale handles
 - Rotation: the knob above a selection (select tool), or the Rotate tool
@@ -147,7 +151,7 @@ To port next (roughly in priority order; greyed out in the UI):
 - AI edit (placeholder button for now)
 - Per-letter styling (mixed fonts/colors within one text)
 - Releasing compound paths; gradient outlines (strokes)
-- Snapping (grid, points, edges), rulers, PDF/PNG export
+- PDF/PNG export
 - Full color picker
 
 ## Keyboard shortcuts

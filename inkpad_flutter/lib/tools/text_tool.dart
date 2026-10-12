@@ -19,14 +19,14 @@ class TextTool extends Tool {
   @override
   void begin(DrawingController c, ToolEvent e) {
     c.endEditing();
-    _start = e.point;
+    _start = c.snapWithFeedback(e.point, e.snapTolerance).point;
     box = null;
   }
 
   @override
   void move(DrawingController c, ToolEvent e) {
     if (box == null) c.selectNone();
-    box = rectFromPoints(_start, e.point);
+    box = rectFromPoints(_start, c.snapWithFeedback(e.point, e.snapTolerance).point);
     c.changed();
   }
 
@@ -42,7 +42,7 @@ class TextTool extends Tool {
     if (hit != null) {
       c.beginEditing(hit);
     } else {
-      c.createText(at: e.point);
+      c.createText(at: _start);
     }
   }
 

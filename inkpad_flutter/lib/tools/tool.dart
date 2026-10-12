@@ -27,10 +27,16 @@ class ToolEvent {
   /// Ported from WDEvent's count.
   final int count;
 
-  const ToolEvent(this.point, this.viewScale, {this.shift = false, this.alt = false, this.count = 1});
+  /// From a finger (bigger targets) rather than a mouse or pen.
+  final bool touch;
+
+  const ToolEvent(this.point, this.viewScale, {this.shift = false, this.alt = false, this.count = 1, this.touch = false});
 
   /// Hit tolerance of [pixels] screen pixels, in document units.
   double slop([double pixels = 8]) => pixels / viewScale;
+
+  /// How close (in document units) a point or edge must be to snap.
+  double get snapTolerance => (touch ? snapPixelsTouch : snapPixelsMouse) / viewScale;
 }
 
 /// Base class for canvas tools. Ported from WDTool.
