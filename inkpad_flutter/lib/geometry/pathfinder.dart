@@ -54,6 +54,14 @@ class Pathfinder {
   static InkStylable? outlineStroke(InkStylable shape) {
     final s = shape.stroke;
     if (s == null || !s.willRender) return null;
+    final arrows = shape is InkPath ? shape.arrowLayout : null;
+    if (arrows != null) {
+      // The trimmed line's outline, united with the arrowheads.
+      final line = outlineStroke(InkPath(nodes: arrows.line, stroke: s.copyWith(startArrow: '', endArrow: '')));
+      final heads = InkCompoundPath(arrows.arrowOutlines(s), fill: InkColor.black, fillRule: FillRule.evenOdd);
+      if (line == null) return heads;
+      return combine([line..fill = InkColor.black, heads], BooleanOp.unite) ?? heads;
+    }
     final closedPolys = <List<Offset>>[], openPolys = <List<Offset>>[];
     for (final (pts, closed) in _flattenSubpaths(shape)) {
       if (s.dashPattern.isNotEmpty) {

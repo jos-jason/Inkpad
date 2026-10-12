@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import 'package:xml/xml.dart';
 
+import '../geometry/arrowheads.dart';
 import '../model/bezier_node.dart';
 import '../model/drawing.dart';
 import '../model/element.dart';
@@ -375,6 +376,8 @@ class _SvgImporter {
 
     InkElement? result;
     switch (name) {
+      case 'g' when _attrLocal(e, 'start-arrow') != null || _attrLocal(e, 'end-arrow') != null:
+        result = _arrowPath(e, context);
       case 'g' || 'a' || 'switch':
         result = _group(e, context);
       case 'svg':
@@ -689,6 +692,41 @@ class _SvgImporter {
     // Like Inkpad, a group of one is unwrapped.
     if (children.length == 1) return children.single;
     return InkGroup(children);
+  }
+
+  /// A path with arrowheads as Inkpad writes it: a group of the shape (its
+  /// fill and full outline), the trimmed line, and the arrowheads.
+  InkElement? _arrowPath(XmlElement e, _Context context) {
+    final parts = <InkElement>[];
+    _addChildren(e, context, parts);
+    final shape = parts.firstOrNull;
+    InkPath? line;
+    var alpha = 1.0;
+    for (final p in parts.skip(1)) {
+      if (p is InkPath && p.stroke != null) line ??= p;
+      if (p is InkGroup) {
+        final l = p.elements.whereType<InkPath>().where((x) => x.stroke != null).firstOrNull;
+        if (l != null && line == null) {
+          line = l;
+          alpha = p.opacity;
+        }
+      }
+    }
+    if (shape is! InkPath || line == null) {
+      return parts.isEmpty ? null : (parts.length == 1 ? parts.single : InkGroup(parts));
+    }
+    String arrow(String name) {
+      final id = _attrLocal(e, name) ?? '';
+      return Arrowhead.named(id) == null ? '' : id;
+    }
+
+    final st = line.stroke!;
+    return shape
+      ..stroke = st.copyWith(
+        color: st.color.withAlpha(st.color.alpha * alpha),
+        startArrow: arrow('start-arrow'),
+        endArrow: arrow('end-arrow'),
+      );
   }
 
   InkElement? _use(XmlElement e, _Context context) {

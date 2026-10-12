@@ -87,7 +87,12 @@ Done:
   duplicate in place, transform again, duplicate & transform again, delete
 - Arrange menu: forward/backward one step, front/back, flip, rotate 90°,
   distribute, group/ungroup, align left/center/right/top/middle/bottom
-- Stroke panel: HSB/alpha/hex color, caps, joins, width, dash & gap pairs
+- Stroke panel: HSB/alpha/hex color, caps, joins, width, dash & gap pairs,
+  and arrowheads (Inkpad's 10: arrows, bar, circles, squares, diamonds;
+  start and end chosen separately, Swap). Ported from WDArrowhead: the line
+  is trimmed so it meets the arrow cleanly, arrows follow the path's
+  direction and scale with the stroke width; reversing a path keeps them in
+  place, Outline Stroke includes them, and SVG export/import keeps them
 - Fill panel: none / color / gradient, draggable gradient stops
 - Layers panel: add, duplicate, delete, rename, show/hide, lock, highlight
   color, drag to reorder, opacity
@@ -139,7 +144,7 @@ Done:
 
 To port next (roughly in priority order; greyed out in the UI):
 - AI edit (placeholder button for now)
-- Arrowheads; per-letter styling (mixed fonts/colors within one text)
+- Per-letter styling (mixed fonts/colors within one text)
 - Releasing compound paths; gradient outlines (strokes)
 - Snapping (grid, points, edges), rulers, PDF/PNG export
 - Full color picker

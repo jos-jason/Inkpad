@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../controller/drawing_controller.dart';
+import '../../geometry/arrowheads.dart';
 import '../../model/style.dart';
 import '../chrome/chrome.dart';
 import '../chrome/color_editor.dart';
@@ -8,12 +9,21 @@ import '../chrome/tool_icons.dart';
 
 /// Stroke color, caps, joins, width and dashes. Ported in spirit from
 /// Inkpad's WDStrokeController.
-class StrokePanel extends StatelessWidget {
+class StrokePanel extends StatefulWidget {
   final DrawingController controller;
 
   const StrokePanel({super.key, required this.controller});
 
+  @override
+  State<StrokePanel> createState() => _StrokePanelState();
+}
+
+class _StrokePanelState extends State<StrokePanel> {
   static StrokeStyle _lastStroke = const StrokeStyle(width: 2);
+
+  bool _choosingArrows = false;
+
+  DrawingController get controller => widget.controller;
 
   @override
   Widget build(BuildContext context) {
@@ -29,6 +39,14 @@ class StrokePanel extends StatelessWidget {
           c.strokeStyle = s;
           c.applyStyleToSelection(stroke: true, record: record);
           c.changed();
+        }
+
+        if (_choosingArrows && stroke != null) {
+          return _ArrowPicker(
+            stroke: stroke,
+            onBack: () => setState(() => _choosingArrows = false),
+            onChanged: (s) => set(s),
+          );
         }
 
         return Column(
@@ -105,18 +123,40 @@ class StrokePanel extends StatelessWidget {
                 onToggle: (on) => set(stroke.copyWith(dashPattern: on ? const [10, 6] : const [])),
               ),
               const Divider(indent: 16, endIndent: 16),
-              Tooltip(
-                message: 'Arrowheads are coming soon',
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                  child: Row(children: [
-                    Expanded(child: Divider(thickness: 3, color: scheme.outlineVariant)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text('arrowheads', style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.35), fontSize: 16)),
+              // Inkpad's arrowhead button: a preview of the current arrows.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                child: Tooltip(
+                  message: 'Arrowheads',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => setState(() => _choosingArrows = true),
+                    child: SizedBox(
+                      height: 48,
+                      child: Row(children: [
+                        Expanded(
+                          child: stroke.hasArrows
+                              ? CustomPaint(
+                                  painter: ArrowPreviewPainter(
+                                    start: stroke.startArrow,
+                                    end: stroke.endArrow,
+                                    color: scheme.onSurface,
+                                  ),
+                                )
+                              : Row(children: [
+                                  const SizedBox(width: 8),
+                                  Expanded(child: Divider(thickness: 3, color: scheme.outlineVariant)),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    child: Text('arrowheads', style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 16)),
+                                  ),
+                                  Expanded(child: Divider(thickness: 3, color: scheme.outlineVariant)),
+                                ]),
+                        ),
+                        const Icon(Icons.chevron_right),
+                      ]),
                     ),
-                    Expanded(child: Divider(thickness: 3, color: scheme.outlineVariant)),
-                  ]),
+                  ),
                 ),
               ),
             ] else
@@ -199,4 +239,115 @@ class _DashEditor extends StatelessWidget {
       ]),
     );
   }
+}
+
+/// The arrowhead list: each row sets the start (left) or end (right)
+/// arrow. Ported from WDArrowController.
+class _ArrowPicker extends StatelessWidget {
+  final StrokeStyle stroke;
+  final VoidCallback onBack;
+  final ValueChanged<StrokeStyle> onChanged;
+
+  const _ArrowPicker({required this.stroke, required this.onBack, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    Widget cell(String id, {required bool atStart}) {
+      final selected = (atStart ? stroke.startArrow : stroke.endArrow) == id;
+      final name = id.isEmpty ? 'No arrowhead' : Arrowhead.named(id)!.label;
+      return Expanded(
+        child: Tooltip(
+          message: '$name at the ${atStart ? 'start' : 'end'}',
+          child: Semantics(
+            button: true,
+            selected: selected,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => onChanged(atStart ? stroke.copyWith(startArrow: id) : stroke.copyWith(endArrow: id)),
+              child: Container(
+                height: 40,
+                margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: selected ? scheme.primaryContainer : null,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: CustomPaint(
+                  painter: ArrowPreviewPainter(
+                    start: atStart ? id : '',
+                    end: atStart ? '' : id,
+                    color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
+                    half: atStart ? ArrowPreviewHalf.start : ArrowPreviewHalf.end,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PopoverHeader(
+          'Arrowheads',
+          leading: IconButton(tooltip: 'Back', icon: const Icon(Icons.chevron_left), onPressed: onBack),
+          trailing: TextButton(
+            onPressed: stroke.startArrow == stroke.endArrow ? null : () => onChanged(stroke.swappedArrows),
+            child: const Text('Swap'),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(children: [
+            Expanded(child: Text('Start', textAlign: TextAlign.center, style: Theme.of(context).textTheme.labelMedium)),
+            Expanded(child: Text('End', textAlign: TextAlign.center, style: Theme.of(context).textTheme.labelMedium)),
+          ]),
+        ),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 520),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+            children: [
+              for (final id in ['', ...Arrowhead.ids])
+                Row(children: [cell(id, atStart: true), cell(id, atStart: false)]),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+enum ArrowPreviewHalf { whole, start, end }
+
+/// A short stroke with arrowheads, for the stroke panel.
+class ArrowPreviewPainter extends CustomPainter {
+  final String start, end;
+  final Color color;
+  final ArrowPreviewHalf half;
+
+  ArrowPreviewPainter({required this.start, required this.end, required this.color, this.half = ArrowPreviewHalf.whole});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const width = 3.0;
+    final y = size.height / 2;
+    final from = Offset(half == ArrowPreviewHalf.end ? 12 : 16, y);
+    final to = Offset(half == ArrowPreviewHalf.start ? size.width - 12 : size.width - 16, y);
+    final s = Arrowhead.named(start), e = Arrowhead.named(end);
+    final paint = Paint()..color = color;
+    // Trim the line where the arrows attach, as on the canvas.
+    final a = s == null ? from : from + Offset(s.insetLength(false) * width, 0);
+    final b = e == null ? to : to - Offset(e.insetLength(false) * width, 0);
+    canvas.drawLine(a, b, paint..strokeWidth = width);
+    if (s != null) canvas.drawPath(s.path(a, width, 3.141592653589793, false), paint);
+    if (e != null) canvas.drawPath(e.path(b, width, 0, false), paint);
+  }
+
+  @override
+  bool shouldRepaint(ArrowPreviewPainter old) =>
+      old.start != start || old.end != end || old.color != color || old.half != half;
 }

@@ -144,7 +144,7 @@ enum LineCap { butt, round, square }
 
 enum LineJoin { miter, round, bevel }
 
-/// Ported from WDStrokeStyle (arrowheads not yet supported).
+/// Ported from WDStrokeStyle.
 class StrokeStyle {
   final double width;
   final LineCap cap;
@@ -152,24 +152,46 @@ class StrokeStyle {
   final InkColor color;
   final List<double> dashPattern;
 
+  /// Arrowhead ids (see Arrowhead.ids) for the path's start and end; empty
+  /// for none.
+  final String startArrow;
+  final String endArrow;
+
   const StrokeStyle({
     this.width = 1,
     this.cap = LineCap.round,
     this.join = LineJoin.round,
     this.color = InkColor.black,
     this.dashPattern = const [],
+    this.startArrow = '',
+    this.endArrow = '',
   });
 
   bool get willRender => width > 0 && color.alpha > 0;
 
-  StrokeStyle copyWith({double? width, InkColor? color, LineCap? cap, LineJoin? join, List<double>? dashPattern}) =>
+  bool get hasArrows => startArrow.isNotEmpty || endArrow.isNotEmpty;
+
+  StrokeStyle copyWith({
+    double? width,
+    InkColor? color,
+    LineCap? cap,
+    LineJoin? join,
+    List<double>? dashPattern,
+    String? startArrow,
+    String? endArrow,
+  }) =>
       StrokeStyle(
         width: width ?? this.width,
         cap: cap ?? this.cap,
         join: join ?? this.join,
         color: color ?? this.color,
         dashPattern: dashPattern ?? this.dashPattern,
+        startArrow: startArrow ?? this.startArrow,
+        endArrow: endArrow ?? this.endArrow,
       );
+
+  /// The arrows swapped end for end (for reversing a path).
+  StrokeStyle get swappedArrows => copyWith(startArrow: endArrow, endArrow: startArrow);
 
   StrokeCap get flutterCap => switch (cap) {
         LineCap.butt => StrokeCap.butt,
@@ -198,6 +220,8 @@ class StrokeStyle {
         'join': join.name,
         'color': color.toJson(),
         'dash': dashPattern,
+        if (startArrow.isNotEmpty) 'startArrow': startArrow,
+        if (endArrow.isNotEmpty) 'endArrow': endArrow,
       };
 
   factory StrokeStyle.fromJson(Map<String, dynamic> j) => StrokeStyle(
@@ -206,5 +230,7 @@ class StrokeStyle {
         join: LineJoin.values.byName(j['join']),
         color: InkColor.fromJson(j['color']),
         dashPattern: (j['dash'] as List).cast<num>().map((n) => n.toDouble()).toList(),
+        startArrow: j['startArrow'] ?? '',
+        endArrow: j['endArrow'] ?? '',
       );
 }

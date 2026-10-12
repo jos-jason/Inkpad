@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import '../geometry/arrowheads.dart';
 import 'bezier_node.dart';
 import 'effects.dart';
 import 'geometry.dart';
@@ -261,15 +262,25 @@ abstract class InkStylable extends InkElement {
     }
     final s = stroke;
     if (s != null && s.willRender) {
+      final arrows = this is InkPath ? (this as InkPath).arrowLayout : null;
+      final line = arrows?.linePath() ?? path;
+      // With arrowheads, line and arrows are drawn as one: a see-through
+      // stroke doesn't darken where they overlap (as in Inkpad).
+      final alpha = s.color.alpha * opacity;
+      final unify = arrows != null && alpha < 1;
+      if (unify) canvas.saveLayer(styleBounds.inflate(1), Paint()..color = Color.fromRGBO(0, 0, 0, alpha));
+      final color = unify ? s.color.withAlpha(1).toColor() : s.color.toColor(opacity);
       canvas.drawPath(
-        s.dashPattern.isEmpty ? path : dashPath(path, s.dashPattern),
+        s.dashPattern.isEmpty ? line : dashPath(line, s.dashPattern),
         Paint()
           ..style = PaintingStyle.stroke
-          ..color = s.color.toColor(opacity)
+          ..color = color
           ..strokeWidth = s.width
           ..strokeCap = s.flutterCap
           ..strokeJoin = s.flutterJoin,
       );
+      if (arrows != null) canvas.drawPath(arrows.arrowsPath(s), Paint()..color = color);
+      if (unify) canvas.restore();
     }
   }
 
@@ -493,6 +504,55 @@ class InkPath extends InkStylable {
   }
 
   /// Control-point bounds (includes handles).
+  ArrowLayout? _arrows;
+  Object? _arrowsKey;
+
+  /// Where this path's arrowheads go (null if it has none, or they don't fit).
+  ArrowLayout? get arrowLayout {
+    final s = stroke;
+    if (s == null || !s.hasArrows || !s.willRender) return null;
+    final key = (Object.hashAll(nodes), closed, s.width, s.cap, s.startArrow, s.endArrow);
+    if (key != _arrowsKey) {
+      _arrowsKey = key;
+      _arrows = ArrowLayout.of(this, s);
+    }
+    return _arrows;
+  }
+
+  @override
+  Rect get styleBounds {
+    final a = arrowLayout;
+    return a == null ? super.styleBounds : super.styleBounds.expandToInclude(a.arrowBounds(stroke!));
+  }
+
+  @override
+  bool hitTest(Offset pt, double tolerance) {
+    if (super.hitTest(pt, tolerance)) return true;
+    final a = arrowLayout;
+    return a != null && a.arrowsPath(stroke!).contains(pt);
+  }
+
+  /// With arrowheads, a group as Inkpad wrote it: the shape's fill, the
+  /// trimmed line and the arrowheads. The inkpad: attributes let it be read
+  /// back as one path.
+  @override
+  String elementSvg(SvgWriter w) {
+    final a = arrowLayout;
+    final s = stroke;
+    if (a == null || s == null || isMasking) return super.elementSvg(w);
+    final unify = s.color.alpha < 1;
+    final color = unify ? s.color.withAlpha(1) : s.color;
+    final strokeAttrs = s.copyWith(color: color).svgAttributes().entries.map((e) => ' ${e.key}="${e.value}"').join();
+    final line = '<path d="${InkPath(nodes: a.line).svgPathData}" fill="none"$strokeAttrs/>';
+    final heads = '<path d="${a.arrowOutlines(s).map((c) => c.svgPathData).join()}" fill="${color.hexValue}" fill-rule="evenodd"/>';
+    final strokePart = unify ? '<g opacity="${fmt(s.color.alpha)}">$line$heads</g>' : '$line$heads';
+    final ends = [
+      if (s.startArrow.isNotEmpty) ' inkpad:start-arrow="${s.startArrow}"',
+      if (s.endArrow.isNotEmpty) ' inkpad:end-arrow="${s.endArrow}"',
+    ].join();
+    return '<g$ends${opacityAttr()}>${_pathSvg(w, fill: true, stroke: false, opacity: false)}$strokePart</g>';
+  }
+
   Rect get controlBounds {
     Rect? r;
     for (final n in nodes) {

@@ -1006,7 +1006,11 @@ class DrawingController extends ChangeNotifier {
     if (!canReversePaths) return;
     checkpoint();
     for (final e in selection) {
-      if (e is InkPath) e.reverse();
+      if (e is InkPath) {
+        e.reverse();
+        // Arrowheads stay where they were (Inkpad swaps them too).
+        e.stroke = e.stroke?.swappedArrows;
+      }
       if (e is InkCompoundPath) {
         for (final p in e.subpaths) {
           p.reverse();
