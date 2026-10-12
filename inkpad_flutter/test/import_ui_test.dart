@@ -94,6 +94,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('New drawing'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
 
     picker.next = [_FakeFile('Logo.svg', _logo)];
     await tester.tap(find.byTooltip('Place image'));

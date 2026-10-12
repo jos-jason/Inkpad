@@ -60,6 +60,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('New drawing'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
 
     // Draw a rectangle, then switch to the select tool.
     await tester.tap(find.byTooltip('Rectangle (R)'));

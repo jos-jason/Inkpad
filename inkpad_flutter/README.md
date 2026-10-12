@@ -143,7 +143,8 @@ Done:
   Drawings autosave as you edit. Search (by name, portfolio, or any text in
   a drawing). Portfolios group drawings like folders: create, rename,
   delete (keeping or deleting their drawings), "Move to Portfolio…", or
-  press and hold a drawing and drop it on a portfolio. Rename a drawing
+  press and hold a drawing and drop it on a portfolio. New drawings ask
+  for a name first. Rename a drawing
   from inside it by tapping its name at the top. Stored as `.inkpad` files in the app's
   support folder (browser storage on the web).
 - SVG and `.inkpad` export, copy SVG to clipboard

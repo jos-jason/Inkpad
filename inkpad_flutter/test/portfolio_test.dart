@@ -150,6 +150,8 @@ void main() {
     expect(find.text('Poster'), findsNothing);
     await tester.tap(find.text('New drawing'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
     final brand = lib.portfolios.single;
     expect(lib.drawingsIn(brand.id).length, 2);
     await tester.tap(find.text('Gallery'));
@@ -164,6 +166,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('New drawing'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Rename drawing'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'My poster');
@@ -175,4 +179,26 @@ void main() {
     expect(find.text('My poster'), findsOneWidget);
     expect(lib.drawings.single.name, 'My poster');
   });
+
+  testWidgets('new drawings ask for a name; cancel makes none', (tester) async {
+    final lib = LibraryController(MemoryDrawingStore());
+    await lib.load();
+    await tester.pumpWidget(InkpadApp(library: lib));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New drawing'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, 'Untitled'), findsOneWidget); // suggested
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(lib.drawings, isEmpty);
+
+    await tester.tap(find.text('New drawing'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'Birthday card');
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Birthday card @'), findsOneWidget); // straight into the editor
+    expect(lib.drawings.single.name, 'Birthday card');
+  });
 }
+

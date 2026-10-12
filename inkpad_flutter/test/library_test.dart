@@ -76,6 +76,8 @@ void main() {
 
     await tester.tap(find.text('New drawing'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
     expect(find.textContaining('Untitled @'), findsOneWidget); // editor title
 
     // Draw a rectangle with the rectangle tool.

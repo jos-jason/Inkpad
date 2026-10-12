@@ -52,7 +52,14 @@ class _LibraryPageState extends State<LibraryPage> {
         MaterialPageRoute(builder: (_) => LibraryPage(library: library, portfolio: p)),
       );
 
-  Future<void> _newDrawing() async => _open(await library.create(portfolio: portfolio?.id));
+  /// Asks for a name (suggesting "Untitled", "Untitled 2", …), then opens
+  /// the new drawing.
+  Future<void> _newDrawing() async {
+    final name = await promptForText(context, title: 'New drawing', initial: library.uniqueName(), action: 'Create');
+    if (name == null || !mounted) return;
+    final trimmed = name.trim();
+    await _open(await library.create(name: trimmed.isEmpty ? null : trimmed, portfolio: portfolio?.id));
+  }
 
   Future<void> _import() async {
     final files = await pickDrawingFiles(context);

@@ -197,7 +197,7 @@ void showSnack(BuildContext context, String msg) =>
 const snackMargin = EdgeInsets.fromLTRB(16, 0, 16, 88);
 
 /// Simple text prompt, used for renaming.
-Future<String?> promptForText(BuildContext context, {required String title, required String initial}) {
+Future<String?> promptForText(BuildContext context, {required String title, required String initial, String action = 'OK'}) {
   final field = TextEditingController(text: initial)
     ..selection = TextSelection(baseOffset: 0, extentOffset: initial.length);
   return showDialog<String>(
@@ -211,7 +211,7 @@ Future<String?> promptForText(BuildContext context, {required String title, requ
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(onPressed: () => Navigator.pop(context, field.text), child: const Text('OK')),
+        FilledButton(onPressed: () => Navigator.pop(context, field.text), child: Text(action)),
       ],
     ),
   );

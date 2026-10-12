@@ -148,6 +148,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('New drawing'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Rectangle (R)'));
     await tester.pump();
     await tester.dragFrom(tester.getCenter(find.byType(DrawingCanvas)), const Offset(100, 60));
