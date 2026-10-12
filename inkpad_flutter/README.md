@@ -89,7 +89,8 @@ Done:
   distribute, group/ungroup, align left/center/right/top/middle/bottom
 - Stroke panel: HSB/alpha/hex color, caps, joins, width, dash & gap pairs,
   and arrowheads (Inkpad's 10: arrows, bar, circles, squares, diamonds;
-  start and end chosen separately, Swap). Ported from WDArrowhead: the line
+  plus three chubby, rounded ones: arrow, notched arrow, open arrow; start
+  and end chosen separately, Swap). Ported from WDArrowhead: the line
   is trimmed so it meets the arrow cleanly, arrows follow the path's
   direction and scale with the stroke width; reversing a path keeps them in
   place, Outline Stroke includes them, and SVG export/import keeps them

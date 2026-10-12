@@ -22,8 +22,8 @@ void main() {
       final a = Arrowhead.named(id)!;
       expect(a.contours, isNotEmpty, reason: id);
       expect(a.bounds.topLeft, Offset.zero, reason: id);
-      expect(a.bounds.width, inInclusiveRange(1, 7.2), reason: id);
-      expect(a.bounds.height, inInclusiveRange(5.5, 7.6), reason: id);
+      expect(a.bounds.width, inInclusiveRange(1, id.startsWith("chubby") ? 10 : 7.2), reason: id);
+      expect(a.bounds.height, inInclusiveRange(5.5, id.startsWith("chubby") ? 10.5 : 7.6), reason: id);
       expect(a.insetLength(false), greaterThan(0), reason: id);
     }
     expect(Arrowhead.named(''), isNull);

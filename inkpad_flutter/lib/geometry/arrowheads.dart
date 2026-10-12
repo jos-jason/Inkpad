@@ -28,10 +28,12 @@ class Arrowhead {
 
   static const _size = 7.0, _half = _size / 2;
 
-  /// Inkpad's arrowheads, in the order its picker lists them.
+  /// Inkpad's arrowheads, in the order its picker lists them, then our
+  /// chubby ones.
   static const ids = [
     'arrow1', 'arrow2', 'arrow3', 'T shape', 'closed circle', 'closed square',
     'closed diamond', 'open circle', 'open square', 'open diamond',
+    'chubby arrow', 'chubby notched', 'chubby open',
   ];
 
   static Arrowhead? named(String id) => id.isEmpty ? null : _all[id];
@@ -81,8 +83,25 @@ class Arrowhead {
 
   static InkPath _poly(List<Offset> pts) => InkPath(nodes: [for (final p in pts) BezierNode.anchor(p)], closed: true);
 
-  static List<InkPath> _outline(InkPath line, LineCap cap) {
-    line.stroke = StrokeStyle(width: 1, cap: cap, join: LineJoin.miter);
+  /// A polygon with its corners rounded off; [radii] per corner (a
+  /// concave corner rounds the same way).
+  static InkPath _roundedPoly(List<Offset> pts, List<double> radii) {
+    const kappa = 0.5523; // circle-like handles
+    final nodes = <BezierNode>[];
+    for (var i = 0; i < pts.length; i++) {
+      final p = pts[i], prev = pts[(i - 1 + pts.length) % pts.length], next = pts[(i + 1) % pts.length];
+      final toPrev = prev - p, toNext = next - p;
+      final r = math.min(radii[i], math.min(toPrev.distance, toNext.distance) / 2);
+      final a = p + toPrev / toPrev.distance * r, b = p + toNext / toNext.distance * r;
+      // Each rounded corner: in at a, out at b, with handles towards p.
+      nodes.add(BezierNode(a, a, a + (p - a) * kappa));
+      nodes.add(BezierNode(b + (p - b) * kappa, b, b));
+    }
+    return InkPath(nodes: nodes, closed: true);
+  }
+
+  static List<InkPath> _outline(InkPath line, LineCap cap, {double width = 1, LineJoin join = LineJoin.miter}) {
+    line.stroke = StrokeStyle(width: width, cap: cap, join: join);
     final o = Pathfinder.outlineStroke(line);
     return switch (o) {
       InkPath p => [p],
@@ -127,6 +146,30 @@ class Arrowhead {
       Arrowhead._('open square', 'Open square', [InkPath.rect(box.deflate(0.5)), InkPath.rect(box.deflate(1.5))],
           const Offset(0.75, _half), const Offset(0.25, 0)),
       Arrowhead._('open diamond', 'Open diamond', openDiamond, diamondTip, const Offset(0.25, 0)),
+      // Chubby: plumper than Inkpad's (9 tall), with soft rounded corners.
+      Arrowhead._(
+        'chubby arrow',
+        'Chubby arrow',
+        [_roundedPoly(const [Offset(0, 0), Offset(8.5, 4.5), Offset(0, 9)], const [1.6, 1.4, 1.6])],
+        const Offset(2.5, 4.5),
+      ),
+      Arrowhead._(
+        'chubby notched',
+        'Chubby notched arrow',
+        [_roundedPoly(const [Offset(0, 0), Offset(8.5, 4.5), Offset(0, 9), Offset(2.6, 4.5)], const [1.4, 1.4, 1.4, 1.2])],
+        const Offset(3.6, 4.5),
+      ),
+      Arrowhead._(
+        'chubby open',
+        'Chubby open arrow',
+        _outline(
+          InkPath(nodes: const [BezierNode.anchor(Offset(2.2, 8.2)), BezierNode.anchor(Offset(7, 4.5)), BezierNode.anchor(Offset(2.2, 0.8))]),
+          LineCap.round,
+          width: 2.2,
+          join: LineJoin.round,
+        ),
+        const Offset(6.6, 4.5),
+      ),
     ];
   }
 }
