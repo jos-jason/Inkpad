@@ -158,14 +158,13 @@ Done:
   solid masks become clipping masks, soft masks (fades) are approximated with
   even transparency; linked (not
   embedded) images are skipped. Text and text on a path import as editable
-  text (one font per text object). Anything approximated is reported after import.
+  text (styled tspans become styled letters). Anything approximated is reported after import.
   Tested against ~3,000 real-world SVGs. "Place SVG…" in the editor adds an
   SVG to the open drawing.
 - Responsive layout (side panels on desktop/tablet, bottom bar on phones)
 
 To port next (roughly in priority order; greyed out in the UI):
 - AI edit (placeholder button for now)
-- Releasing compound paths
 - Full color picker
 
 ## Keyboard shortcuts

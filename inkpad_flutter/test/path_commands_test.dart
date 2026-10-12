@@ -162,6 +162,32 @@ void main() {
       expect(c.drawing.activeLayer.elements.every((e) => (e as InkPath).fill == blue), isTrue);
     });
 
+    test('separating keeps a gradient in place and releases a mask\'s contents', () {
+      final c = DrawingController();
+      final compound = InkCompoundPath([
+        InkPath.rect(const Rect.fromLTWH(0, 0, 40, 40)),
+        InkPath.rect(const Rect.fromLTWH(60, 0, 40, 40)),
+      ], fill: InkGradient.between(red, blue));
+      final inside = InkPath.rect(const Rect.fromLTWH(10, 10, 80, 20))..fill = red;
+      compound.maskedElements = [inside];
+      c.addElement(compound);
+      c.select(compound);
+      expect(c.canSeparatePaths, isTrue);
+      c.separatePaths();
+      final els = c.drawing.activeLayer.elements;
+      expect(els.length, 3);
+      expect(els.last, same(inside)); // the contents, back on the layer, on top
+      final right = els[1] as InkPath;
+      expect(right.isMasking, isFalse);
+      // Still one gradient across both pieces: the right piece is mostly blue.
+      final g = (right.fill as InkGradient).fitted(right.bounds);
+      expect(g.documentStart.dx, 0);
+      expect(g.documentEnd.dx, 100);
+      expect(c.selection, els.take(2).toSet());
+      c.undo();
+      expect((c.drawing.activeLayer.elements.single as InkCompoundPath).isMasking, isTrue);
+    });
+
     test('outline stroke: replaces stroke-only shapes; keeps the fill underneath', () {
       final c = DrawingController();
       final stroked = line(Offset.zero, const Offset(100, 0))..stroke = const StrokeStyle(width: 10, color: red, cap: LineCap.butt);

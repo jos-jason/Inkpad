@@ -1014,28 +1014,40 @@ class DrawingController extends ChangeNotifier {
     _replace(ordered, top, compound);
   }
 
-  bool get canSeparatePaths => selection.any((e) => e is InkCompoundPath && !e.isMasking);
+  bool get canSeparatePaths => selection.any((e) => e is InkCompoundPath);
 
   /// Ported from -[WDDrawingController releaseCompoundPath:]: each subpath
-  /// becomes a path of its own with the compound path's style.
+  /// becomes a path of its own with the compound path's style. A compound
+  /// path that is a clipping mask lets go of its contents first (as in
+  /// Inkpad). Gradients keep their place across the whole shape instead of
+  /// starting over in each piece.
   void separatePaths() {
     if (!canSeparatePaths) return;
     checkpoint();
     final released = <InkElement>[];
     for (final e in orderedSelection) {
-      if (e is! InkCompoundPath || e.isMasking) {
+      if (e is! InkCompoundPath) {
         released.add(e);
         continue;
       }
       final layer = layerOf(e)!;
+      final masked = e.maskedElements;
+      e.maskedElements = [];
+      final b = e.bounds;
+      final fill = switch (e.fill) {
+        InkGradient g when g.geometry == null => g.copyWith(geometry: g.fitted(b)),
+        final f => f,
+      };
+      final sg = e.stroke?.gradient;
+      final stroke = sg != null && sg.geometry == null ? e.stroke!.copyWith(gradient: sg.copyWith(geometry: sg.fitted(b))) : e.stroke;
       final parts = [
         for (final p in e.subpaths)
-          InkPath(nodes: p.nodes, closed: p.closed, fill: e.fill, stroke: e.stroke, fillRule: e.fillRule)..copyEffects(e),
+          InkPath(nodes: p.nodes, closed: p.closed, fill: fill, stroke: stroke, fillRule: e.fillRule)..copyEffects(e),
       ];
       final i = layer.elements.indexOf(e);
       layer.elements
         ..removeAt(i)
-        ..insertAll(i, parts);
+        ..insertAll(i, [...parts, ...masked]);
       released.addAll(parts);
     }
     selection
