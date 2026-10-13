@@ -53,6 +53,8 @@ class ShapeTool extends Tool {
       if (kind == ShapeKind.line || kind == ShapeKind.spiral) _shape!.fill = null;
       c.addElement(_shape!);
       c.select(_shape!);
+    } else if (built.live != null) {
+      _shape!.live = built.live;
     } else {
       _shape!
         ..nodes = built.nodes
@@ -66,6 +68,8 @@ class ShapeTool extends Tool {
     var end = c.snapWithFeedback(e.point, e.snapTolerance, skip: (el) => identical(el, _shape)).point;
 
     if (kind == ShapeKind.spiral) return _spiral(_start, end);
+    // Make mode: shapes keep their dimensions.
+    final make = c.drawing.makeMode;
 
     if (kind == ShapeKind.line) {
       if (e.shift) {
@@ -73,6 +77,7 @@ class ShapeTool extends Tool {
         final angle = (math.atan2(d.dy, d.dx) / (math.pi / 4)).round() * (math.pi / 4);
         end = _start + Offset(math.cos(angle), math.sin(angle)) * d.distance;
       }
+      if (make) return InkPath.live(LiveShape.line(_start, end));
       return InkPath(nodes: [BezierNode.anchor(_start), BezierNode.anchor(end)]);
     }
 
@@ -85,6 +90,20 @@ class ShapeTool extends Tool {
         ? Rect.fromCenter(center: _start, width: d.dx.abs() * 2, height: d.dy.abs() * 2)
         : rectFromPoints(_start, _start + d);
 
+    if (make) {
+      return InkPath.live(LiveShape.inRect(
+        switch (kind) {
+          ShapeKind.rectangle => LiveKind.rectangle,
+          ShapeKind.oval => LiveKind.ellipse,
+          ShapeKind.star => LiveKind.star,
+          _ => LiveKind.polygon,
+        },
+        rect,
+        cornerRadius: cornerRadius,
+        sides: kind == ShapeKind.star ? starPoints : polygonSides,
+        innerRatio: starInnerRatio,
+      ));
+    }
     return switch (kind) {
       ShapeKind.rectangle => InkPath.roundedRect(rect, cornerRadius),
       ShapeKind.oval => InkPath.oval(rect),

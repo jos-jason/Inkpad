@@ -130,7 +130,8 @@ class SelectionTool extends Tool {
     // 2. Handles/anchors of the single selected path. Double-clicking a point
     // adds or removes its handles (Inkpad's convertNode).
     final path = c.singleSelectedPath;
-    if (path != null && _pickNode(path, e.point, tol)) {
+    // A live shape's points aren't edited directly (it moves instead).
+    if (path != null && path.live == null && _pickNode(path, e.point, tol)) {
       if (e.count == 2 && _mode == _Mode.anchor) {
         c.checkpoint();
         path.convertAnchor(_nodeIndex);

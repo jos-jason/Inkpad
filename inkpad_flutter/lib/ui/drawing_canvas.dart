@@ -429,7 +429,8 @@ class _CanvasPainter extends CustomPainter {
       }
     } else {
       final path = controller.activePath ?? controller.singleSelectedPath;
-      if (path != null) _paintNodes(canvas, path, px);
+      // A live shape's points aren't edited directly, so they aren't shown.
+      if (path != null && path.live == null) _paintNodes(canvas, path, px);
     }
 
     final shape = controller.singleSelectedStylable;

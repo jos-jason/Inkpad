@@ -5,6 +5,9 @@ import 'dart:ui';
 import 'element.dart';
 import 'geometry.dart';
 import 'style.dart';
+import 'units.dart';
+
+export 'units.dart';
 
 /// Ported from WDLayer.
 class InkLayer {
@@ -96,6 +99,21 @@ class InkDrawing {
   bool snapToPoints, snapToEdges, snapToGrid, showGrid;
   double gridSpacing;
 
+  /// Make mode: physical dimensions and cutting (for CNC routers such as
+  /// the Shaper Origin, laser cutters, …). Shapes stay editable by their
+  /// dimensions, and each shape says how it's cut.
+  bool makeMode;
+
+  /// Inches shown as fractions (1 3/8") to the nearest 1/[inchDenominator];
+  /// other units with [decimals] places.
+  bool fractionalInches;
+  int inchDenominator;
+  int decimals;
+
+  /// Material and tool, in points: stock thickness, bit diameter, and the
+  /// depth new cuts get.
+  double materialThickness, bitDiameter, defaultCutDepth;
+
   /// Document units (points) per ruler unit.
   static const unitSizes = {'in': 72.0, 'cm': 72 / 2.54, 'mm': 72 / 25.4, 'pt': 1.0, 'px': 1.0};
 
@@ -111,9 +129,24 @@ class InkDrawing {
     this.snapToGrid = false,
     this.showGrid = false,
     this.gridSpacing = 36,
+    this.makeMode = false,
+    this.fractionalInches = true,
+    this.inchDenominator = 32,
+    this.decimals = 2,
+    this.materialThickness = 18 * 72 / 25.4,
+    this.bitDiameter = 6 * 72 / 25.4,
+    this.defaultCutDepth = 6 * 72 / 25.4,
   }) : layers = layers ?? [InkLayer(name: 'Layer 1')];
 
   Rect get bounds => Rect.fromLTWH(0, 0, width, height);
+
+  /// How lengths are shown and typed in this drawing.
+  LengthFormat get lengths => LengthFormat(
+        unit: units == 'px' ? 'pt' : units,
+        fractions: fractionalInches,
+        denominator: inchDenominator,
+        decimals: units == 'in' ? 3 : decimals,
+      );
 
   InkLayer get activeLayer => layers[activeLayerIndex];
 
@@ -164,13 +197,21 @@ class InkDrawing {
   /// SVG export, modelled on -[WDDrawing SVGRepresentation].
   String toSvg() {
     final w = fmt(width), h = fmt(height);
+    // Make mode: physical size in the drawing's unit (so cutting tools
+    // read it at true size), and Shaper's namespace for cut depths.
+    final inches = units == 'in';
+    final size = !makeMode
+        ? 'width="${w}pt" height="${h}pt"'
+        : inches
+            ? 'width="${fmt(width / 72)}in" height="${fmt(height / 72)}in"'
+            : 'width="${fmt(width * 25.4 / 72)}mm" height="${fmt(height * 25.4 / 72)}mm"';
     final sb = StringBuffer()
       ..writeln('<?xml version="1.0" encoding="UTF-8"?>')
       ..writeln('<!-- Created with Inkpad (Flutter) -->')
       ..writeln('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
-          'xmlns:inkpad="http://inkpad.org/ns" version="1.1" '
-          'width="${w}pt" height="${h}pt" viewBox="0 0 $w $h">');
-    final writer = SvgWriter();
+          'xmlns:inkpad="http://inkpad.org/ns"${makeMode ? ' xmlns:shaper="http://www.shapertools.com/namespaces/shaper"' : ''} version="1.1" '
+          '$size viewBox="0 0 $w $h">');
+    final writer = SvgWriter(make: makeMode, defaultDepth: defaultCutDepth, depthUnit: inches ? 'in' : 'mm');
     final body = [for (final l in layers) l.toSvg(writer)];
     if (writer.definitions.isNotEmpty) sb.writeln('<defs>${writer.definitions.join()}</defs>');
     for (final l in body) {
@@ -199,6 +240,9 @@ class InkDrawing {
         'rulers': showRulers,
         'snap': {'points': snapToPoints, 'edges': snapToEdges, 'grid': snapToGrid},
         'grid': {'show': showGrid, 'spacing': gridSpacing},
+        if (makeMode) 'make': true,
+        'lengths': {'fractions': fractionalInches, 'denominator': inchDenominator, 'decimals': decimals},
+        'material': {'thickness': materialThickness, 'bit': bitDiameter, 'depth': defaultCutDepth},
         'layers': layers.map((l) => l.toJson()).toList(),
         if (includeImages && images.isNotEmpty)
           'images': {for (final d in images) d.id: base64Encode(d.bytes)},
@@ -220,6 +264,13 @@ class InkDrawing {
       snapToGrid: j['snap']?['grid'] as bool? ?? false,
       showGrid: j['grid']?['show'] as bool? ?? false,
       gridSpacing: (j['grid']?['spacing'] as num?)?.toDouble() ?? 36,
+      makeMode: j['make'] as bool? ?? false,
+      fractionalInches: j['lengths']?['fractions'] as bool? ?? true,
+      inchDenominator: j['lengths']?['denominator'] as int? ?? 32,
+      decimals: j['lengths']?['decimals'] as int? ?? 2,
+      materialThickness: (j['material']?['thickness'] as num?)?.toDouble() ?? 18 * 72 / 25.4,
+      bitDiameter: (j['material']?['bit'] as num?)?.toDouble() ?? 6 * 72 / 25.4,
+      defaultCutDepth: (j['material']?['depth'] as num?)?.toDouble() ?? 6 * 72 / 25.4,
       layers: (j['layers'] as List).map((l) => InkLayer.fromJson(l)).toList(),
     );
   }

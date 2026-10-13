@@ -46,7 +46,11 @@ class DirectSelectTool extends Tool {
     _grabAnchor = null;
     _moved = Offset.zero;
     final tol = e.slop();
-    final paths = c.pathOwners().keys.toList().reversed; // topmost first
+    // Live shapes (Make mode) keep their dimensions: their points aren't
+    // edited directly.
+    final all = c.pathOwners().keys.toList().reversed; // topmost first
+    final paths = all.where((p) => p.live == null);
+    final liveHit = all.where((p) => p.live != null).any((p) => p.anchorIndexAt(e.point, tol) != null || p.hitTest(e.point, tol));
 
     // 1. Handles of selected points.
     for (final MapEntry(key: path, value: indices) in c.selectedNodes.entries) {
@@ -102,6 +106,12 @@ class DirectSelectTool extends Tool {
       next[path] = {for (var i = 0; i < path.nodes.length; i++) i};
       c.setSelectedNodes(next);
       _mode = _Mode.nodes;
+      return;
+    }
+
+    if (liveHit) {
+      c.liveShapeHint();
+      _mode = _Mode.none;
       return;
     }
 

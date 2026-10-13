@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'geometry.dart';
@@ -125,6 +126,43 @@ class BezierSegment {
       BezierSegment(n1.anchorPoint, n1.outPoint, n2.inPoint, n2.anchorPoint);
 
   bool get isStraight => a == outA && inB == b;
+
+  /// The exact bounds of the curve (not just its control points), in full
+  /// precision.
+  Rect get bounds {
+    var minX = math.min(a.dx, b.dx), maxX = math.max(a.dx, b.dx);
+    var minY = math.min(a.dy, b.dy), maxY = math.max(a.dy, b.dy);
+    if (!isStraight) {
+      // Where the curve turns: roots of its derivative, per axis.
+      for (final t in [..._extrema(a.dx, outA.dx, inB.dx, b.dx), ..._extrema(a.dy, outA.dy, inB.dy, b.dy)]) {
+        final p = pointAt(t);
+        minX = math.min(minX, p.dx);
+        maxX = math.max(maxX, p.dx);
+        minY = math.min(minY, p.dy);
+        maxY = math.max(maxY, p.dy);
+      }
+    }
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
+  }
+
+  static List<double> _extrema(double p0, double p1, double p2, double p3) {
+    final a = -p0 + 3 * p1 - 3 * p2 + p3, b = 2 * (p0 - 2 * p1 + p2), c = p1 - p0;
+    final out = <double>[];
+    void add(double t) {
+      if (t > 0 && t < 1) out.add(t);
+    }
+
+    if (a.abs() < 1e-12) {
+      if (b.abs() > 1e-12) add(-c / b);
+      return out;
+    }
+    final disc = b * b - 4 * a * c;
+    if (disc < 0) return out;
+    final s = math.sqrt(disc);
+    add((-b + s) / (2 * a));
+    add((-b - s) / (2 * a));
+    return out;
+  }
 
   Offset pointAt(double t) {
     final mt = 1 - t;

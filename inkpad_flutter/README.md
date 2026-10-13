@@ -148,6 +148,25 @@ Done:
   from inside it by tapping its name at the top. Stored as `.inkpad` files in the app's
   support folder (browser storage on the web).
 - SVG and `.inkpad` export, copy SVG to clipboard
+- Make mode (Settings → Make mode), for CNC routers such as the Shaper
+  Origin, laser cutters and other cutting tools, inspired by Shaper Studio:
+  - Exact sizes in mm (to 0.001 mm), cm or inches (decimal, or fractions
+    to 1/64″). Lengths can be typed in any unit and as sums: `1 3/8"`,
+    `1-3/8"`, `2' 6"`, `25.4mm`, `300-2*12`.
+  - Shapes keep their dimensions ("live" shapes): rectangles (with corner
+    radius), ellipses, polygons, stars and lines stay editable by number
+    through moves, rotations and resizing, until Path → Convert to Path.
+  - The selection's overall width and height are drawn as dimension lines
+    on the canvas; tap a number to type a new size. A numbers bar shows
+    X, Y, width, height (with a proportion lock), angle, corner radius,
+    sides.
+  - Cuts: each shape is an Exterior, Interior, On line, Pocket or Guide
+    cut (Shaper Origin's types, in its colors), with its own depth and
+    offset; material thickness, bit diameter and default depth in
+    Settings.
+  - SVG export at true size (mm or in) with Shaper's `shaper:cutDepth`
+    and letters as outlines; Shaper files open in Make mode with their
+    cut types read from their colors.
 - AI (the ✨ button), with your own account: Claude (Anthropic), any
   OpenAI-compatible service (OpenAI, OpenRouter, Groq, LM Studio, Gemini's
   compatible endpoint…), or Ollama on your computer or network. Set it up

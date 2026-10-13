@@ -54,6 +54,115 @@ class DrawingController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// A short message for the user (e.g. why a tool did nothing); the editor
+  /// shows it and clears it.
+  final hint = ValueNotifier<String?>(null);
+
+  void showHint(String message) => hint.value = message;
+
+  /// Explains that a live shape's points can't be edited directly.
+  void liveShapeHint() => showHint('This shape keeps its dimensions. To edit its points, use Path → Convert to Path.');
+
+  // ---- Live shapes (Make mode) ----------------------------------------------
+
+  Iterable<InkPath> get _selectedLive sync* {
+    for (final e in selection) {
+      for (final d in e.selfAndDescendants) {
+        if (d is InkPath && d.live != null) yield d;
+      }
+    }
+  }
+
+  bool get canConvertToPaths => _selectedLive.isNotEmpty;
+
+  /// Makes live shapes plain paths, so their points can be edited (they no
+  /// longer remember their dimensions).
+  void convertToPaths() {
+    final live = _selectedLive.toList();
+    if (live.isEmpty) return;
+    checkpoint();
+    for (final p in live) {
+      p.live = null;
+    }
+    notifyListeners();
+  }
+
+  /// The single selected live shape, if that's the selection.
+  InkPath? get singleLiveShape {
+    final e = selection.length == 1 ? selection.first : null;
+    return e is InkPath && e.live != null ? e : null;
+  }
+
+  /// Changes the selected live shape's dimensions (record: false while a
+  /// value is being dragged).
+  void setLiveShape(InkPath p, LiveShape shape, {bool record = true}) {
+    if (record) checkpoint();
+    p.live = shape;
+    notifyListeners();
+  }
+
+  // ---- Exact sizes (Make mode's numbers bar and dimensions) ---------------
+
+  /// The selection's size: a single live shape's own width and height (along
+  /// its sides, even when turned), otherwise its bounding box.
+  ({Rect bounds, double width, double height})? get measure {
+    final b = selectionBounds;
+    if (b == null) return null;
+    final live = singleLiveShape?.live;
+    if (live != null) return (bounds: b, width: live.width, height: live.height);
+    return (bounds: b, width: b.width, height: b.height);
+  }
+
+  /// Moves the selection so its bounding box's top-left is at [x], [y].
+  void moveSelectionTo({double? x, double? y}) {
+    final b = selectionBounds;
+    if (b == null) return;
+    checkpoint();
+    _batchDepth++;
+    try {
+      transformSelection(Affine.translation((x ?? b.left) - b.left, (y ?? b.top) - b.top));
+    } finally {
+      _batchDepth--;
+    }
+    notifyListeners();
+  }
+
+  /// Sets the selection's width and/or height (keeping its top-left in
+  /// place). A live shape changes its own dimensions; anything else is
+  /// scaled. With [keepProportions], one value sets both.
+  void resizeSelection({double? width, double? height, bool keepProportions = false}) {
+    final m = measure;
+    if (m == null) return;
+    final live = singleLiveShape;
+    var w = width, h = height;
+    if (keepProportions) {
+      if (w != null && h == null && m.width > 0) h = m.height * w / m.width;
+      if (h != null && w == null && m.height > 0) w = m.width * h / m.height;
+    }
+    if (w != null && w <= 0 || h != null && h <= 0) return;
+    checkpoint();
+    if (live != null) {
+      live.live = live.live!.resized(w: w, h: h);
+    } else {
+      final sx = w == null || m.width == 0 ? 1.0 : w / m.width;
+      final sy = h == null || m.height == 0 ? 1.0 : h / m.height;
+      _batchDepth++;
+      try {
+        transformSelection(Affine.scaleAbout(m.bounds.topLeft, sx, sy));
+      } finally {
+        _batchDepth--;
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Turns the selected live shape to [degrees].
+  void setLiveAngle(double degrees) {
+    final p = singleLiveShape;
+    if (p == null) return;
+    setLiveShape(p, p.live!.rotatedTo(degrees));
+  }
+
   /// Where the point being dragged snapped to, shown on the canvas.
   SnapResult? snapFeedback;
 
@@ -135,12 +244,103 @@ class DrawingController extends ChangeNotifier {
 
   // ---- Elements ---------------------------------------------------------
 
-  InkPath styledPath(InkPath p) => p
-    ..fill = fillPaint
-    ..stroke = strokeStyle
-    ..opacity = defaultOpacity
-    ..shadow = defaultShadow
-    ..blendMode = defaultBlendMode;
+  InkPath styledPath(InkPath p) {
+    p
+      ..fill = fillPaint
+      ..stroke = strokeStyle
+      ..opacity = defaultOpacity
+      ..shadow = defaultShadow
+      ..blendMode = defaultBlendMode;
+    // Make mode: new shapes are cut, in Shaper's colors.
+    if (drawing.makeMode) applyCut(p, CutSpec(p.closed ? defaultCut : CutType.online));
+    return p;
+  }
+
+  // ---- Cuts (Make mode) -------------------------------------------------------
+
+  /// The cut type new closed shapes get.
+  CutType defaultCut = CutType.exterior;
+
+  /// Sets [s]'s cut and shows it in Shaper's colors.
+  static void applyCut(InkStylable s, CutSpec cut) {
+    s.cut = cut;
+    s.fill = cut.type.fill;
+    s.stroke = cut.type.stroke;
+  }
+
+  /// The shapes in the selection that can be cut (inside groups too).
+  List<InkStylable> get cuttables => [
+        for (final e in selection)
+          for (final d in e.selfAndDescendants)
+            if (d is InkStylable && d is! InkGroup) d,
+      ];
+
+  /// The cut shown in the Cut panel: the first selected shape's, or the
+  /// default for new shapes.
+  CutSpec get currentCut => cuttables.map((s) => s.cut).nonNulls.firstOrNull ?? CutSpec(defaultCut);
+
+  /// Sets the cut type of the selection (and of new shapes). Open shapes
+  /// can only be cut on the line or be guides.
+  void setCutType(CutType type) {
+    if (type == CutType.exterior || type == CutType.interior || type == CutType.pocket) defaultCut = type;
+    final shapes = cuttables;
+    if (shapes.isEmpty) return notifyListeners();
+    checkpoint();
+    var skipped = 0;
+    for (final s in shapes) {
+      final open = s is InkPath && !s.closed;
+      if (open && type.needsClosedShape) {
+        skipped++;
+        continue;
+      }
+      applyCut(s, (s.cut ?? CutSpec(type)).copyWith(type: type));
+    }
+    if (skipped > 0) showHint('${type.label} needs a closed shape; $skipped open ${skipped == 1 ? 'path was' : 'paths were'} left as they were.');
+    notifyListeners();
+  }
+
+  /// Sets the selection's cut depth (null: the drawing's default depth).
+  void setCutDepth(double? depth, {bool record = true}) {
+    final shapes = cuttables;
+    if (shapes.isEmpty) return;
+    if (record) checkpoint();
+    for (final s in shapes) {
+      final cut = s.cut ?? CutSpec(s is InkPath && !s.closed ? CutType.online : defaultCut);
+      applyCut(s, depth == null ? cut.copyWith(defaultDepth: true) : cut.copyWith(depth: depth));
+    }
+    notifyListeners();
+  }
+
+  /// Sets how far the tool is offset from the selection's lines.
+  void setCutOffset(double offset, {bool record = true}) {
+    final shapes = cuttables;
+    if (shapes.isEmpty) return;
+    if (record) checkpoint();
+    for (final s in shapes) {
+      final cut = s.cut ?? CutSpec(s is InkPath && !s.closed ? CutType.online : defaultCut);
+      applyCut(s, cut.copyWith(offset: offset));
+    }
+    notifyListeners();
+  }
+
+  /// Turns Make mode on or off. Turning it on gives every shape a cut
+  /// (exterior for closed shapes, on line for open ones) unless it has one.
+  void setMakeMode(bool on) {
+    if (drawing.makeMode == on) return;
+    checkpoint();
+    drawing.makeMode = on;
+    if (on) {
+      if (drawing.units != 'in' && drawing.units != 'mm' && drawing.units != 'cm') drawing.units = 'mm';
+      for (final e in drawing.allElements) {
+        for (final d in e.selfAndDescendants) {
+          if (d is InkStylable && d is! InkGroup && d.cut == null && d is! InkText) {
+            applyCut(d, CutSpec(d is InkPath && !d.closed ? CutType.online : CutType.exterior));
+          }
+        }
+      }
+    }
+    notifyListeners();
+  }
 
   void addElement(InkElement e) {
     drawing.activeLayer.elements.add(e);

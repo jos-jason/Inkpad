@@ -1,16 +1,21 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 
 import '../geometry/arrowheads.dart';
 import 'bezier_node.dart';
+import 'cut.dart';
 import 'effects.dart';
 import 'geometry.dart';
 import 'image.dart';
+import 'live_shape.dart';
 import 'style.dart';
 import 'text.dart';
 
+export 'cut.dart';
 export 'effects.dart';
 export 'image.dart';
+export 'live_shape.dart';
 export 'text.dart';
 
 /// Base class for everything that lives on a layer. Ported from WDElement.
@@ -119,6 +124,27 @@ abstract class InkElement {
 /// Collects the `<defs>` (gradients, clip paths) while a drawing is exported.
 class SvgWriter {
   final List<String> definitions = [];
+
+  /// Make mode: cut types and depths are written for Shaper Origin (and
+  /// text becomes outlines, which every cutting tool can read).
+  final bool make;
+
+  /// The depth used for cuts without their own, and the unit depths are
+  /// written in ('mm' or 'in').
+  final double defaultDepth;
+  final String depthUnit;
+
+  SvgWriter({this.make = false, this.defaultDepth = 0, this.depthUnit = 'mm'});
+
+  /// Attributes for a shape's cut: Shaper's cutDepth (in mm or inches), and
+  /// Inkpad's own record of the cut for reading the file back.
+  String cutAttributes(CutSpec? cut) {
+    if (!make || cut == null) return '';
+    final depth = cut.depth ?? defaultDepth;
+    final value = depthUnit == 'in' ? '${fmt(depth / 72)}in' : '${fmt(depth * 25.4 / 72)}mm';
+    final own = jsonEncode(cut.toJson()).replaceAll('"', '&quot;');
+    return '${cut.type == CutType.guide ? '' : ' shaper:cutDepth="$value"'} inkpad:cut="$own"';
+  }
   int _gradients = 0, _clips = 0, _shadows = 0;
 
   /// Adds a drop shadow filter; returns its id.
@@ -181,6 +207,9 @@ abstract class InkStylable extends InkElement {
   StrokeStyle? stroke;
   FillRule fillRule;
   List<InkElement> maskedElements;
+
+  /// How it's cut, in Make mode (null: not set).
+  CutSpec? cut;
 
   InkStylable({this.fill, this.stroke, this.fillRule = FillRule.nonZero, List<InkElement>? maskedElements, super.opacity})
       : maskedElements = maskedElements ?? [];
@@ -373,13 +402,14 @@ abstract class InkStylable extends InkElement {
     final s = stroke ? this.stroke : null;
     if (s != null && s.willRender) attrs.addAll(w.strokeAttributes(s, bounds));
     final a = attrs.entries.map((e) => '${e.key}="${e.value}"').join(' ');
-    return '<path $a${opacity ? opacityAttr() : ''}/>';
+    return '<path $a${opacity ? opacityAttr() : ''}${w.cutAttributes(cut)}/>';
   }
 
   Map<String, dynamic> styleJson() => {
         'fill': fill?.toJson(),
         'stroke': stroke?.toJson(),
         if (fillRule == FillRule.evenOdd) 'fillRule': 'evenOdd',
+        if (cut != null) 'cut': cut!.toJson(),
         ...effectsJson(),
         if (isMasking) 'masked': maskedElements.map((e) => e.toJson()).toList(),
       };
@@ -389,6 +419,7 @@ abstract class InkStylable extends InkElement {
     maskedElements = [for (final e in (j['masked'] as List?) ?? const []) InkElement.fromJson(e)];
     stroke = j['stroke'] == null ? null : StrokeStyle.fromJson(j['stroke']);
     fillRule = j['fillRule'] == 'evenOdd' ? FillRule.evenOdd : FillRule.nonZero;
+    cut = j['cut'] == null ? null : CutSpec.fromJson(j['cut']);
     readEffectsJson(j);
   }
 }
@@ -415,8 +446,9 @@ Path dashPath(Path source, List<double> pattern) {
 
 /// A single bezier path. Ported from WDPath.
 class InkPath extends InkStylable {
-  List<BezierNode> nodes;
+  List<BezierNode> _nodes;
   bool closed;
+  LiveShape? _live;
 
   InkPath({
     List<BezierNode>? nodes,
@@ -425,7 +457,34 @@ class InkPath extends InkStylable {
     super.stroke,
     super.fillRule,
     super.opacity,
-  }) : nodes = nodes ?? [];
+  }) : _nodes = nodes ?? [];
+
+  /// A live shape (Make mode): its outline comes from its dimensions.
+  InkPath.live(LiveShape shape, {super.fill, super.stroke, super.opacity})
+      : _nodes = shape.buildNodes(),
+        closed = shape.closed,
+        _live = shape;
+
+  List<BezierNode> get nodes => _nodes;
+
+  /// Changing the points by hand makes it a plain path.
+  set nodes(List<BezierNode> value) {
+    _nodes = value;
+    _live = null;
+  }
+
+  /// The shape's dimensions, if it's a live shape (else null).
+  LiveShape? get live => _live;
+
+  /// Sets the dimensions (rebuilding the outline), or with null converts
+  /// it to a plain path.
+  set live(LiveShape? shape) {
+    _live = shape;
+    if (shape != null) {
+      _nodes = shape.buildNodes();
+      closed = shape.closed;
+    }
+  }
 
   factory InkPath.rect(Rect r) => InkPath(
         nodes: [
@@ -505,6 +564,14 @@ class InkPath extends InkStylable {
   @override
   Iterable<BezierSegment> get allSegments => segments;
 
+  /// Exact bounds, in full precision (Make mode relies on them).
+  @override
+  Rect get bounds {
+    if (nodes.isEmpty) return Rect.zero;
+    if (nodes.length == 1) return Rect.fromPoints(nodes.first.anchorPoint, nodes.first.anchorPoint);
+    return segments.map((s) => s.bounds).reduce((a, b) => a.expandToInclude(b));
+  }
+
   @override
   bool get isEmpty => nodes.isEmpty;
 
@@ -527,12 +594,6 @@ class InkPath extends InkStylable {
     final p = Path()..fillType = fillRule == FillRule.evenOdd ? PathFillType.evenOdd : PathFillType.nonZero;
     addTo(p);
     return p;
-  }
-
-  @override
-  Rect get bounds {
-    if (nodes.length == 1) return Rect.fromCenter(center: nodes.first.anchorPoint, width: 0, height: 0);
-    return super.bounds;
   }
 
   /// Control-point bounds (includes handles).
@@ -599,6 +660,13 @@ class InkPath extends InkStylable {
 
   @override
   void transformGeometry(Affine t) {
+    // A live shape stays live unless it would be skewed.
+    final l = _live;
+    final moved = l?.transformed(t);
+    if (moved != null) {
+      live = moved;
+      return;
+    }
     // Like Inkpad, stroke width is left unchanged by transforms.
     nodes = nodes.map((n) => n.transform(t)).toList();
   }
@@ -630,6 +698,7 @@ class InkPath extends InkStylable {
   /// Inserts an anchor at parameter [t] of segment [segmentIndex], keeping
   /// the curve shape unchanged. Ported from -[WDPath addAnchorAtPoint:].
   void insertAnchor(int segmentIndex, double t) {
+    _live = null;
     final seg = segments.elementAt(segmentIndex);
     if (seg.isStraight) {
       // Keep straight segments straight, with no handles on the new point.
@@ -671,6 +740,7 @@ class InkPath extends InkStylable {
   /// two anchors. Returns false if the anchor couldn't be removed.
   bool deleteAnchor(int index) {
     if (nodes.length <= 2) return false;
+    _live = null;
     nodes.removeAt(index);
     return true;
   }
@@ -680,6 +750,7 @@ class InkPath extends InkStylable {
   /// them; a node without handles gets smooth handles parallel to the line
   /// between its neighbours, a quarter of that distance long.
   void convertAnchor(int index) {
+    _live = null;
     final node = nodes[index];
     if (node.hasInPoint || node.hasOutPoint) {
       nodes[index] = node.chopHandles();
@@ -702,13 +773,18 @@ class InkPath extends InkStylable {
         'type': 'path',
         'nodes': nodes.map((n) => n.toJson()).toList(),
         'closed': closed,
+        if (_live != null) 'live': _live!.toJson(),
         ...styleJson(),
       };
 
-  factory InkPath.fromJson(Map<String, dynamic> j) => InkPath(
-        nodes: (j['nodes'] as List).map((n) => BezierNode.fromJson(n)).toList(),
-        closed: j['closed'] as bool,
-      )..readStyleJson(j);
+  factory InkPath.fromJson(Map<String, dynamic> j) {
+    final p = InkPath(
+      nodes: (j['nodes'] as List).map((n) => BezierNode.fromJson(n)).toList(),
+      closed: j['closed'] as bool,
+    )..readStyleJson(j);
+    if (j['live'] case final Map<String, dynamic> live) p._live = LiveShape.fromJson(live);
+    return p;
+  }
 }
 
 /// Several subpaths filled and stroked as one shape, so inner subpaths can
@@ -721,6 +797,12 @@ class InkCompoundPath extends InkStylable {
 
   @override
   Iterable<BezierSegment> get allSegments => subpaths.expand((p) => p.segments);
+
+  @override
+  Rect get bounds {
+    final parts = [for (final p in subpaths) if (p.nodes.isNotEmpty) p.bounds];
+    return parts.isEmpty ? Rect.zero : parts.reduce((a, b) => a.expandToInclude(b));
+  }
 
   @override
   bool get isEmpty => subpaths.every((p) => p.isEmpty);

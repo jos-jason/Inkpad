@@ -20,6 +20,7 @@ class AnchorTool extends Tool {
     final selected = c.singleSelectedPath;
     if (selected != null) {
       final i = selected.anchorIndexAt(e.point, tol);
+      if (i != null && selected.live != null) return c.liveShapeHint();
       if (i != null) {
         if (e.alt) {
           c.checkpoint();
@@ -43,6 +44,10 @@ class AnchorTool extends Tool {
           return;
         }
         final hit = path.edgeHit(e.point, tol + (path.stroke?.width ?? 0) / 2);
+        if (hit != null && path.live != null) {
+          c.select(path);
+          return c.liveShapeHint();
+        }
         if (hit != null) {
           c.checkpoint();
           path.insertAnchor(hit.$1, hit.$2);

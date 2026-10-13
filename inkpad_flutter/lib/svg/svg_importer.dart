@@ -204,11 +204,19 @@ class _SvgImporter {
     _viewWidth = width ?? 768;
     _viewHeight = height ?? 1024;
 
+    _shaperNamespace = root.attributes.any((a) => a.value.contains('shapertools.com'));
     final rootStyle = _computeStyle(root, const {});
     final context = _Context(ctm, rootStyle.$1);
     final layers = _buildLayers(root, context);
 
     final drawing = InkDrawing(layers: layers, activeLayerIndex: layers.length - 1);
+    // Files made for Shaper Origin (or by Inkpad's Make mode) open in Make
+    // mode, in their unit.
+    if (_cutFile) {
+      drawing.makeMode = true;
+      final w = root.getAttribute('width') ?? '';
+      drawing.units = w.endsWith('in') ? 'in' : 'mm';
+    }
     if (width == null || height == null) {
       Rect? content;
       for (final e in drawing.allElements) {
@@ -420,6 +428,7 @@ class _SvgImporter {
     final maskId = _funcIri(own['mask']);
     if (result != null && maskId != null) result = _applyMask(result, maskId, ctm);
 
+    if (result is InkStylable) _readCut(e, result);
     if (result != null) {
       final shadowId = _funcIri(own['filter']);
       final shadow = shadowId == null ? null : _shadow(shadowId, ctm);
@@ -434,6 +443,60 @@ class _SvgImporter {
       result.opacity *= _opacity(own);
     }
     return result;
+  }
+
+  /// Whether the file says how shapes are cut (Shaper's or Inkpad's).
+  bool _cutFile = false;
+
+  /// A shape's cut: Inkpad's own record if present; otherwise, in a file
+  /// made for Shaper Origin, its colors (Shaper's code) and cut depth.
+  void _readCut(XmlElement e, InkStylable shape) {
+    final own = _attrLocal(e, 'cut');
+    if (own != null) {
+      try {
+        shape.cut = CutSpec.fromJson(jsonDecode(own) as Map<String, dynamic>);
+        _cutFile = true;
+        return;
+      } catch (_) {}
+    }
+    final depthText = _attrLocal(e, 'cutDepth');
+    if (depthText == null && !_shaperNamespace) return;
+    _cutFile = true;
+    final depth = depthText == null ? null : _depth(depthText);
+    final type = _cutTypeFromColors(shape);
+    if (type != null) shape.cut = CutSpec(type, depth: depth);
+  }
+
+  bool _shaperNamespace = false;
+
+  static double? _depth(String text) {
+    final m = RegExp(r'^\s*([\d.]+)\s*(mm|in)?\s*$').firstMatch(text);
+    if (m == null) return null;
+    final v = double.tryParse(m.group(1)!);
+    if (v == null) return null;
+    return m.group(2) == 'in' ? v * 72 : v * 72 / 25.4;
+  }
+
+  /// Shaper's color code: black fill → exterior, white fill with an
+  /// outline → interior, gray fill → pocket, gray outline → on line, blue →
+  /// guide.
+  static CutType? _cutTypeFromColors(InkStylable s) {
+    final f = s.fill?.representativeColor;
+    final st = s.stroke?.color;
+    bool gray(InkColor c) => (c.red - c.green).abs() < 0.02 && (c.green - c.blue).abs() < 0.02 && c.red > 0.1 && c.red < 0.9;
+    bool blue(InkColor c) => c.blue > 0.6 && c.red < 0.3;
+    if (f != null) {
+      if (blue(f)) return CutType.guide;
+      if (gray(f)) return CutType.pocket;
+      if (f.red < 0.1 && f.green < 0.1 && f.blue < 0.1) return CutType.exterior;
+      if (f.red > 0.9 && f.green > 0.9 && f.blue > 0.9) return CutType.interior;
+    }
+    if (st != null) {
+      if (blue(st)) return CutType.guide;
+      if (gray(st)) return CutType.online;
+      return CutType.online;
+    }
+    return null;
   }
 
   /// A drop shadow from a `<filter>`: feDropShadow, or the classic

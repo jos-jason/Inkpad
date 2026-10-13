@@ -4,12 +4,79 @@ import '../../controller/drawing_controller.dart';
 import '../../model/drawing.dart';
 import '../ai/ai_settings_page.dart';
 import '../chrome/chrome.dart';
+import '../make/length_field.dart';
 
 /// Drawing settings. Ported in spirit from Inkpad's WDSettingsController.
 class SettingsPanel extends StatelessWidget {
   final DrawingController controller;
 
   const SettingsPanel({super.key, required this.controller});
+
+  /// Units, precision and material for Make mode.
+  List<Widget> _makeSettings(BuildContext context, InkDrawing d) {
+    final theme = Theme.of(context);
+    void set(void Function() change) {
+      change();
+      controller.changed();
+    }
+
+    Widget row(String label, Widget field) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+          child: Row(children: [Expanded(child: Text(label)), field]),
+        );
+
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: SegmentedButton<String>(
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(value: 'mm', label: Text('mm')),
+            ButtonSegment(value: 'cm', label: Text('cm')),
+            ButtonSegment(value: 'in', label: Text('inches')),
+          ],
+          selected: {d.units == 'cm' || d.units == 'in' ? d.units : 'mm'},
+          onSelectionChanged: (s) => set(() => d.units = s.single),
+        ),
+      ),
+      if (d.units == 'in') ...[
+        SwitchListTile(
+          dense: true,
+          title: const Text('Fractions of an inch'),
+          value: d.fractionalInches,
+          onChanged: (v) => set(() => d.fractionalInches = v),
+        ),
+        if (d.fractionalInches)
+          row(
+            'Finest fraction',
+            DropdownButton<int>(
+              value: d.inchDenominator,
+              items: [for (final n in const [8, 16, 32, 64]) DropdownMenuItem(value: n, child: Text('1/$n″'))],
+              onChanged: (v) => set(() => d.inchDenominator = v ?? 32),
+            ),
+          ),
+      ] else
+        row(
+          'Shown to',
+          DropdownButton<int>(
+            value: d.decimals,
+            items: [
+              for (final n in const [0, 1, 2, 3])
+                DropdownMenuItem(value: n, child: Text(n == 0 ? '1 ${d.units}' : '0.${'0' * (n - 1)}1 ${d.units}')),
+            ],
+            onChanged: (v) => set(() => d.decimals = v ?? 2),
+          ),
+        ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: Text('Material and bit', style: theme.textTheme.titleSmall),
+      ),
+      row('Material thickness', LengthField(value: d.materialThickness, lengths: d.lengths, onChanged: (v) => set(() => d.materialThickness = v), width: 120)),
+      row('Bit diameter', LengthField(value: d.bitDiameter, lengths: d.lengths, onChanged: (v) => set(() => d.bitDiameter = v), width: 120)),
+      row('Default cut depth', LengthField(value: d.defaultCutDepth, lengths: d.lengths, onChanged: (v) => set(() => d.defaultCutDepth = v), width: 120)),
+      const SizedBox(height: 8),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +102,15 @@ class SettingsPanel extends StatelessWidget {
                 controller.changed();
               },
             ),
+            // Make mode: exact sizes and cutting.
+            SwitchListTile(
+              title: const Text('Make mode'),
+              subtitle: const Text('Exact sizes and cuts, for CNC routers (Shaper Origin) and laser cutters'),
+              value: d.makeMode,
+              onChanged: controller.setMakeMode,
+            ),
+            if (d.makeMode) ..._makeSettings(context, d),
+            const Divider(indent: 16, endIndent: 16),
             // Ported from WDSettingsController's snapping and grid rows.
             const Divider(indent: 16, endIndent: 16),
             SwitchListTile(

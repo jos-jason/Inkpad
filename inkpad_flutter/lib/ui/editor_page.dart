@@ -13,6 +13,9 @@ import '../model/style.dart';
 import '../tools/tool.dart';
 import 'ai/ai_panel.dart';
 import 'chrome/chrome.dart';
+import 'make/cut_panel.dart';
+import 'make/dimension_overlay.dart';
+import 'make/numbers_bar.dart';
 import 'chrome/color_editor.dart';
 import 'chrome/rulers.dart';
 import 'chrome/tool_icons.dart';
@@ -112,6 +115,13 @@ class _EditorPageState extends State<EditorPage> {
   final _keys = FocusNode(debugLabel: 'editor shortcuts');
   bool _wasEditing = false;
 
+  void _showHint() {
+    final message = controller.hint.value;
+    if (message == null || !mounted) return;
+    controller.hint.value = null;
+    showSnack(context, message);
+  }
+
   void _onEditingChanged() {
     final editing = controller.editingText != null;
     if (_wasEditing && !editing) {
@@ -129,6 +139,7 @@ class _EditorPageState extends State<EditorPage> {
     _lastSaved = controller.drawing.encode(includeImages: false);
     controller.addListener(_scheduleAutosave);
     controller.addListener(_onEditingChanged);
+    controller.hint.addListener(_showHint);
     _lifecycle = AppLifecycleListener(onHide: _saveNow, onPause: _saveNow);
   }
 
@@ -315,6 +326,10 @@ class _EditorPageState extends State<EditorPage> {
     final c = controller;
     MenuAction shapes(String label, BooleanOp op) => MenuAction(label, c.canCombineShapes ? () => _combine(op) : null);
     return [
+      if (c.drawing.makeMode || c.canConvertToPaths) ...[
+        MenuAction('Convert to Path', c.canConvertToPaths ? c.convertToPaths : null),
+        const MenuDivider(),
+      ],
       MenuAction('Add Anchor Points', c.canAddAnchors ? c.addAnchorPoints : null),
       MenuAction('Delete Anchor Points', c.canDeleteAnchors ? c.deleteSelectedAnchors : null),
       MenuAction('Join Paths', c.canJoinPaths ? c.joinPaths : null),
@@ -416,6 +431,14 @@ class _EditorPageState extends State<EditorPage> {
                     ),
                   ]),
                 ),
+                if (controller.drawing.makeMode)
+                  Positioned.fill(
+                    child: DimensionOverlay(
+                      controller: controller,
+                      view: view,
+                      origin: rulers ? const Offset(Ruler.thickness, Ruler.thickness) : Offset.zero,
+                    ),
+                  ),
                 if (controller.editingText != null)
                   Positioned.fill(
                     child: TextEditorOverlay(
@@ -455,7 +478,14 @@ class _EditorPageState extends State<EditorPage> {
                       ),
                       Align(
                         alignment: Alignment.bottomCenter,
-                        child: Padding(padding: const EdgeInsets.only(bottom: 72), child: _toolOptions()),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 72),
+                          child: Column(mainAxisSize: MainAxisSize.min, children: [
+                            _toolOptions(),
+                            if (controller.drawing.makeMode && controller.selection.isNotEmpty && controller.editingText == null)
+                              Padding(padding: const EdgeInsets.only(top: 8), child: NumbersBar(controller: controller)),
+                          ]),
+                        ),
                       ),
                       if (compact)
                         Align(
@@ -620,6 +650,14 @@ class _EditorPageState extends State<EditorPage> {
               tooltip: 'Text',
               icon: const Icon(Icons.text_fields),
               onPressed: () => _panel(b, TextPanel(controller: c), width: 380),
+            ),
+          ),
+        if (c.drawing.makeMode)
+          Builder(
+            builder: (b) => IconButton(
+              tooltip: 'Cut',
+              icon: const Icon(Icons.carpenter_outlined),
+              onPressed: () => _panel(b, CutPanel(controller: c), width: 400),
             ),
           ),
         Builder(
