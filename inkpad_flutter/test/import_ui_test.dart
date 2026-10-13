@@ -67,7 +67,7 @@ void main() {
     await tester.pumpAndSettle();
 
     picker.next = [_FakeFile('Logo.svg', _logo), _FakeFile('broken.svg', '<svg')];
-    await tester.tap(find.byTooltip('Import SVG or .inkpad files'));
+    await tester.tap(find.byTooltip('Import SVG, DXF or .inkpad files'));
     await tester.pumpAndSettle();
 
     expect(picker.lastExtensions, containsAll(['svg', 'inkpad']));
@@ -100,10 +100,10 @@ void main() {
     picker.next = [_FakeFile('Logo.svg', _logo)];
     await tester.tap(find.byTooltip('Place image'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Place SVG…'));
+    await tester.tap(find.text('Place SVG or DXF…'));
     await tester.pumpAndSettle();
 
-    expect(picker.lastExtensions, ['svg']);
+    expect(picker.lastExtensions, ['svg', 'dxf']);
     await tester.pump(const Duration(seconds: 1)); // autosave
     final layer = lib.drawings.single.drawing.activeLayer;
     expect(layer.elements.single, isA<InkGroup>());

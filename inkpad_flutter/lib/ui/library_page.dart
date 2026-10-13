@@ -235,7 +235,7 @@ class _LibraryPageState extends State<LibraryPage> {
                   onPressed: _newPortfolio,
                 ),
               IconButton(
-                tooltip: 'Import SVG or .inkpad files',
+                tooltip: 'Import SVG, DXF or .inkpad files',
                 icon: const Icon(Icons.file_open_outlined),
                 onPressed: _import,
               ),

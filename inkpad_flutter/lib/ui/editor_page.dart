@@ -597,7 +597,7 @@ class _EditorPageState extends State<EditorPage> {
 
   List<MenuEntry> _placeMenu() => [
         MenuAction('Place Image…', _placeImage),
-        MenuAction('Place SVG…', _placeSvg),
+        MenuAction('Place SVG or DXF…', _placeSvg),
       ];
 
   List<MenuEntry> _shareMenu() => [

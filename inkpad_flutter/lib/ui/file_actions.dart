@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../export/dxf_export.dart';
+import '../import/dxf_import.dart';
 import '../export/pdf_export.dart';
 import '../export/raster_export.dart';
 import '../model/drawing.dart';
@@ -102,7 +103,7 @@ Future<List<ImportedFile>> pickDrawingFiles(BuildContext context, {bool inkpad =
   try {
     files = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: [if (inkpad) ...[inkpadExtension, 'json'], if (svg) 'svg'],
+      allowedExtensions: [if (inkpad) ...[inkpadExtension, 'json'], if (svg) ...['svg', 'dxf']],
     );
   } catch (e) {
     if (context.mounted) showSnack(context, 'Could not open the file picker: $e');
@@ -114,7 +115,10 @@ Future<List<ImportedFile>> pickDrawingFiles(BuildContext context, {bool inkpad =
     final ext = dot > 0 ? f.name.substring(dot + 1).toLowerCase() : '';
     try {
       final text = await f.xFile.readAsString();
-      if (ext == 'svg' || (ext != inkpadExtension && text.trimLeft().startsWith('<'))) {
+      if (ext == 'dxf') {
+        final r = importDxf(text);
+        result.add((name: name, drawing: r.drawing, warnings: r.warnings));
+      } else if (ext == 'svg' || (ext != inkpadExtension && text.trimLeft().startsWith('<'))) {
         final r = importSvg(text);
         result.add((name: name, drawing: r.drawing, warnings: r.warnings));
       } else {
