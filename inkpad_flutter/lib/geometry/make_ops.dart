@@ -92,6 +92,104 @@ class MakeOps {
       ];
 }
 
+/// Joints on one straight edge of a part: fingers cut into it, or tabs
+/// sticking out of it (for tab-and-slot).
+class EdgeJoint {
+  /// Fingers (notches cut in, the edge between stays) or tabs (stick out).
+  final bool tabs;
+
+  /// How many fingers (counting both fingers and notches) or tabs.
+  final int count;
+
+  /// Fingers: whether the edge starts with a finger (else a notch); the
+  /// mating edge starts with the opposite.
+  final bool startWithFinger;
+
+  /// How deep notches go / how far tabs stick out (usually the material
+  /// thickness), and each tab's width.
+  final double depth, tabWidth;
+
+  /// Fingers and tabs this much narrower (notches wider), for fit.
+  final double clearance;
+
+  const EdgeJoint({
+    required this.tabs,
+    required this.count,
+    this.startWithFinger = true,
+    required this.depth,
+    this.tabWidth = 0,
+    this.clearance = 0,
+  });
+
+  /// Where the edge is raised or lowered, as (start, end) along it.
+  List<(double, double)> _intervals(double length) {
+    if (tabs) {
+      final w = math.max(tabWidth - clearance, 0.0);
+      return [
+        for (var k = 0; k < count; k++)
+          (length * (k + 0.5) / count - w / 2, length * (k + 0.5) / count + w / 2),
+      ];
+    }
+    final seg = length / count;
+    final notches = <(double, double)>[];
+    for (var i = 0; i < count; i++) {
+      final finger = (i.isEven) == startWithFinger;
+      if (finger) continue;
+      // Notches a little wider (fingers narrower) for the fit.
+      final a = i == 0 ? 0.0 : i * seg - clearance / 2;
+      final b = i == count - 1 ? length : (i + 1) * seg + clearance / 2;
+      notches.add((a, b));
+    }
+    return notches;
+  }
+
+  /// The points replacing the edge from [a] to [b] (not including them),
+  /// for a shape whose inside is towards [inward].
+  List<Offset> profile(Offset a, Offset b, Offset inward) {
+    final len = (b - a).distance;
+    if (len <= 0) return const [];
+    final dir = (b - a) / len;
+    final shift = (tabs ? -inward : inward) * depth;
+    final pts = <Offset>[];
+    for (final (s0, s1) in _intervals(len)) {
+      final p0 = a + dir * s0, p1 = a + dir * s1;
+      pts.addAll([p0, p0 + shift, p1 + shift, p1]);
+    }
+    // Drop points that sit on the edge's own ends.
+    final clean = <Offset>[];
+    for (final p in pts) {
+      if ((p - a).distance < 1e-9 || (p - b).distance < 1e-9) continue;
+      if (clean.isEmpty || (clean.last - p).distance > 1e-9) clean.add(p);
+    }
+    return clean;
+  }
+}
+
+/// Slots along a line, to take another part's tabs (tab-and-slot).
+class SlotRow {
+  final int count;
+  final double tabWidth, thickness, clearance;
+
+  const SlotRow({required this.count, required this.tabWidth, required this.thickness, this.clearance = 0});
+
+  /// Slot outlines centered on the line from [a] to [b], spaced as the
+  /// matching [EdgeJoint] tabs along an edge of the same length.
+  List<InkPath> slots(Offset a, Offset b) {
+    final len = (b - a).distance;
+    if (len <= 0) return const [];
+    final dir = (b - a) / len, n = Offset(-dir.dy, dir.dx);
+    final w = tabWidth + clearance, t = thickness + clearance;
+    return [
+      for (var k = 0; k < count; k++)
+        () {
+          final c = a + dir * (len * (k + 0.5) / count);
+          final pts = [c - dir * (w / 2) - n * (t / 2), c + dir * (w / 2) - n * (t / 2), c + dir * (w / 2) + n * (t / 2), c - dir * (w / 2) + n * (t / 2)];
+          return InkPath(nodes: [for (final p in pts) BezierNode.anchor(p)], closed: true);
+        }(),
+    ];
+  }
+}
+
 /// A finger-jointed box's flat panels (outer dimensions), ready to cut.
 class BoxMaker {
   /// Outside width (x), depth (y) and height (z).

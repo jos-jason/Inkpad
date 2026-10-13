@@ -179,3 +179,96 @@ Future<void> showBoxMakerDialog(BuildContext context, DrawingController c) async
   );
   c.makeBox(box, origin: Offset(10 * mm, 10 * mm), dogbones: dogbones);
 }
+
+/// Remembered between joints, so slots match the tabs made before them.
+int _jointCount = 3;
+double? _tabWidth, _jointClearance;
+bool _jointTabs = false, _startWithFinger = true, _jointDogbones = true;
+
+/// The Joinery tool picked [target]: ask what to make there.
+Future<void> showJointDialog(BuildContext context, DrawingController c, JointTarget target) async {
+  final d = c.drawing;
+  final lengths = d.lengths;
+  final seg = target.path.segments.elementAt(target.segment);
+  final length = target.isLine ? (target.path.nodes.last.anchorPoint - target.path.nodes.first.anchorPoint).distance : (seg.b - seg.a).distance;
+  final t = d.materialThickness;
+  var tabs = target.isLine ? true : _jointTabs;
+  var count = _jointCount;
+  if (!tabs && count.isEven) count += 1;
+  var tabWidth = _tabWidth ?? math.min(40 * 72 / 25.4, length / (2 * count));
+  var clearance = _jointClearance ?? 0.1 * 72 / 25.4;
+  var depth = t;
+  var startWithFinger = _startWithFinger;
+  var dogbones = _jointDogbones;
+  final ok = await _dialog(
+    context,
+    title: target.isLine ? 'Slots along ${lengths.format(length)}' : 'Joint on a ${lengths.format(length)} edge',
+    action: target.isLine ? 'Add slots' : 'Add joint',
+    body: (setState) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (!target.isLine)
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(value: false, label: Text('Fingers')),
+            ButtonSegment(value: true, label: Text('Tabs')),
+          ],
+          selected: {tabs},
+          onSelectionChanged: (s) => setState(() => tabs = s.single),
+        ),
+      if (!target.isLine)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            tabs
+                ? 'Tabs stick out of this edge, into slots on the other part.'
+                : 'Fingers and notches along this edge; give the matching edge the opposite start.',
+            style: const TextStyle(fontSize: 12),
+          ),
+        )
+      else
+        const Text('Slots for another part\'s tabs, centered on this line. Make the tabs with the same count and width on an edge as long as the line.',
+            style: TextStyle(fontSize: 12)),
+      const SizedBox(height: 8),
+      _row(tabs ? (target.isLine ? 'Slots' : 'Tabs') : 'Fingers and notches', _count(count, (v) => setState(() => count = v), lengths),
+          help: tabs ? null : 'An odd number makes both ends match'),
+      if (tabs) _row('Tab width', LengthField(value: tabWidth, lengths: lengths, width: 130, onChanged: (v) => setState(() => tabWidth = v))),
+      if (!tabs)
+        _row(
+          'Starts with',
+          SegmentedButton<bool>(
+            segments: const [ButtonSegment(value: true, label: Text('Finger')), ButtonSegment(value: false, label: Text('Notch'))],
+            selected: {startWithFinger},
+            onSelectionChanged: (s) => setState(() => startWithFinger = s.single),
+          ),
+        ),
+      _row(target.isLine ? 'Material thickness' : (tabs ? 'Tab length' : 'Notch depth'),
+          LengthField(value: depth, lengths: lengths, width: 130, onChanged: (v) => setState(() => depth = v)),
+          help: target.isLine ? 'Of the part going in' : 'Usually the material thickness'),
+      _row('Fit clearance', LengthField(value: clearance, lengths: lengths, width: 130, onChanged: (v) => setState(() => clearance = v))),
+      if (!tabs || target.isLine)
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Dogbones'),
+          subtitle: Text('For the ${lengths.format(d.bitDiameter)} bit'),
+          value: dogbones,
+          onChanged: (v) => setState(() => dogbones = v),
+        ),
+    ]),
+  );
+  if (!ok) return;
+  _jointCount = count;
+  _tabWidth = tabWidth;
+  _jointClearance = clearance;
+  _jointTabs = tabs;
+  _startWithFinger = startWithFinger;
+  _jointDogbones = dogbones;
+  if (target.isLine) {
+    c.addSlots(target.path, SlotRow(count: count, tabWidth: tabWidth, thickness: depth, clearance: clearance), dogbones: dogbones);
+  } else {
+    c.addEdgeJoint(
+      target.path,
+      target.segment,
+      EdgeJoint(tabs: tabs, count: count, startWithFinger: startWithFinger, depth: depth, tabWidth: tabWidth, clearance: clearance),
+      dogbones: dogbones,
+    );
+  }
+}

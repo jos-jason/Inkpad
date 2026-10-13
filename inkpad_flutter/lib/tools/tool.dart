@@ -10,6 +10,7 @@ export 'pen_tool.dart';
 export 'transform_tool.dart';
 export 'selection_tool.dart';
 export 'shape_tool.dart';
+export 'joinery_tool.dart';
 export 'measure_tool.dart';
 export 'text_tool.dart';
 

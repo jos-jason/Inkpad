@@ -79,6 +79,7 @@ class _EditorPageState extends State<EditorPage> {
   final _rotate = RotateTool();
   final _text = TextTool();
   final _measure = MeasureTool();
+  final _joinery = JoineryTool();
   final _hand = HandTool();
 
   late final _shapes = PaletteGroup([
@@ -108,6 +109,7 @@ class _EditorPageState extends State<EditorPage> {
     PaletteTool('Text', const ToolIcon(ToolIcon.text), _text, shortcut: 'T'),
     PaletteTool('Eyedropper', const Icon(Icons.colorize), _eyedropper, shortcut: 'I'),
     PaletteTool('Measure', const Icon(Icons.straighten), _measure, shortcut: 'M'),
+    PaletteTool('Joinery', const Icon(Icons.extension_outlined), _joinery, shortcut: 'J'),
     PaletteTool('Scale', const ToolIcon(ToolIcon.scale), _scale, shortcut: 'K'),
     PaletteTool('Rotate', const ToolIcon(ToolIcon.rotate), _rotate, shortcut: 'O'),
   ];
@@ -117,6 +119,13 @@ class _EditorPageState extends State<EditorPage> {
   // Keyboard shortcuts listen here; it gets the keyboard back after typing.
   final _keys = FocusNode(debugLabel: 'editor shortcuts');
   bool _wasEditing = false;
+
+  void _askJoint() {
+    final target = controller.jointRequest.value;
+    if (target == null || !mounted) return;
+    controller.jointRequest.value = null;
+    showJointDialog(context, controller, target);
+  }
 
   void _showHint() {
     final message = controller.hint.value;
@@ -143,6 +152,7 @@ class _EditorPageState extends State<EditorPage> {
     controller.addListener(_scheduleAutosave);
     controller.addListener(_onEditingChanged);
     controller.hint.addListener(_showHint);
+    controller.jointRequest.addListener(_askJoint);
     _lifecycle = AppLifecycleListener(onHide: _saveNow, onPause: _saveNow);
   }
 
@@ -230,7 +240,7 @@ class _EditorPageState extends State<EditorPage> {
     };
     final shortcutTools = <String, Tool>{
       'V': _select, 'A': _direct, 'P': _pen, 'N': _anchor, 'R': _rect, 'E': _oval, 'S': _star, 'G': _polygon, 'L': _line,
-      'K': _scale, 'O': _rotate, 'H': _hand, 'C': _scissors, 'B': _brush, 'F': _freehand, 'I': _eyedropper, 'T': _text, 'M': _measure,
+      'K': _scale, 'O': _rotate, 'H': _hand, 'C': _scissors, 'B': _brush, 'F': _freehand, 'I': _eyedropper, 'T': _text, 'M': _measure, 'J': _joinery,
     };
     map[const SingleActivator(LogicalKeyboardKey.keyE, shift: true)] = () => _setTool(_eraser);
     for (final MapEntry(key: letter, value: tool) in shortcutTools.entries) {

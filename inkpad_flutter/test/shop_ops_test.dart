@@ -169,5 +169,52 @@ void main() {
     expect(text, contains('53.13°'));
     expect(text, contains('↔ 30 mm'));
   });
+
+  group('edge joints', () {
+    test('tabs stick out of an edge; slots along a line line up with them', () {
+      final c = make();
+      final shelf = c.styledPath(InkPath.live(LiveShape.inRect(LiveKind.rectangle, const Rect.fromLTWH(0, 0, 300, 100))));
+      c.addElement(shelf);
+      // Segment 2 runs along the bottom (bottom-right to bottom-left).
+      c.addEdgeJoint(shelf, 2, const EdgeJoint(tabs: true, count: 3, depth: 12, tabWidth: 40));
+      final s = c.drawing.allElements.single as InkPath;
+      expect(s.live, isNull);
+      expect(s.bounds.bottom, closeTo(112, 1e-9));
+      bool solid(Offset p) => s.toFlutterPath().contains(p);
+      expect(solid(const Offset(50, 106)), isTrue); // a tab (centered at 50)
+      expect(solid(const Offset(100, 106)), isFalse); // between tabs
+      c.undo();
+
+      final side = InkPath(nodes: [const BezierNode.anchor(Offset(0, 300)), const BezierNode.anchor(Offset(300, 300))]);
+      c.addElement(side);
+      c.addSlots(side, const SlotRow(count: 3, tabWidth: 40, thickness: 12, clearance: 0.5), dogbones: false);
+      final slots = c.selection.cast<InkStylable>().toList();
+      expect(slots.length, 3);
+      expect(slots.map((x) => x.bounds.center.dx.roundToDouble()), [50, 150, 250]); // where the tabs are
+      expect(slots.first.bounds.width, closeTo(40.5, 1e-9));
+      expect(slots.first.bounds.height, closeTo(12.5, 1e-9));
+      expect(slots.first.cut!.type, CutType.interior);
+      expect(side.cut!.type, CutType.guide);
+    });
+
+    test('fingers: notches cut in, alternating; dogbones in their corners', () {
+      final c = make();
+      final part = c.styledPath(InkPath.rect(const Rect.fromLTWH(0, 0, 100, 50)));
+      c.addElement(part);
+      c.addEdgeJoint(part, 0, const EdgeJoint(tabs: false, count: 5, depth: 10), dogbones: false);
+      final p = c.drawing.allElements.single as InkPath;
+      bool solid(Offset q) => p.toFlutterPath().contains(q);
+      expect(solid(const Offset(10, 5)), isTrue); // first finger
+      expect(solid(const Offset(30, 5)), isFalse); // first notch
+      expect(solid(const Offset(50, 5)), isTrue);
+      expect(solid(const Offset(30, 15)), isTrue); // below the notch
+      c.undo();
+      c.addEdgeJoint(c.drawing.allElements.single as InkPath, 0, const EdgeJoint(tabs: false, count: 5, depth: 10, startWithFinger: false));
+      final q = c.drawing.allElements.single as InkStylable;
+      expect(q.toFlutterPath().contains(const Offset(10, 5)), isFalse); // starts with a notch now
+      expect(q.toFlutterPath().contains(const Offset(30, 5)), isTrue);
+      expect(q.cut, isNotNull); // dogbones kept the cut
+    });
+  });
 }
 

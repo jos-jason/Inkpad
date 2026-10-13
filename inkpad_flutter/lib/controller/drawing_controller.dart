@@ -216,6 +216,86 @@ class DrawingController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---- Joinery on edges (Make mode) -----------------------------------------
+
+  /// Set by the Joinery tool when an edge or line is clicked: the editor
+  /// then asks what joint to make.
+  final jointRequest = ValueNotifier<JointTarget?>(null);
+
+  /// Puts [replacement] where [old] is (in a layer, a group or a mask).
+  void _replaceElement(InkElement old, InkElement replacement) {
+    bool inList(List<InkElement> list) {
+      final i = list.indexOf(old);
+      if (i >= 0) {
+        list[i] = replacement;
+        return true;
+      }
+      for (final e in list) {
+        if (e is InkGroup && inList(e.elements)) return true;
+        if (e is InkStylable && inList(e.maskedElements)) return true;
+      }
+      return false;
+    }
+
+    for (final l in drawing.layers) {
+      if (inList(l.elements)) break;
+    }
+    if (selection.remove(old)) selection.add(replacement);
+  }
+
+  /// Relieves [shape]'s corners for the bit (keeping its style and cut).
+  InkStylable _withDogbones(InkStylable shape, {required bool hole}) {
+    final r = MakeOps.dogbones(shape, drawing.bitDiameter / 2, forHole: hole);
+    if (r == null) return shape;
+    return r
+      ..fill = shape.fill
+      ..stroke = shape.stroke
+      ..cut = shape.cut
+      ..copyEffects(shape);
+  }
+
+  /// Cuts fingers into, or adds tabs to, the straight edge [segment] of
+  /// [path] (a closed part). The part becomes a plain path.
+  void addEdgeJoint(InkPath path, int segment, EdgeJoint joint, {bool dogbones = true}) {
+    final segs = path.segments.toList();
+    if (!path.closed || segment < 0 || segment >= segs.length || !segs[segment].isStraight) return;
+    final a = segs[segment].a, b = segs[segment].b;
+    final d = b - a;
+    if (d.distance <= 0) return;
+    var inward = Offset(-d.dy, d.dx) / d.distance;
+    if (!path.toFlutterPath().contains((a + b) / 2 + inward * 0.5)) inward = -inward;
+    checkpoint();
+    final nodes = List.of(path.nodes);
+    nodes.insertAll(segment + 1, [for (final p in joint.profile(a, b, inward)) BezierNode.anchor(p)]);
+    path.nodes = nodes;
+    if (dogbones && !joint.tabs) {
+      final relieved = _withDogbones(path, hole: false);
+      if (!identical(relieved, path)) _replaceElement(path, relieved);
+    }
+    notifyListeners();
+  }
+
+  /// Adds slots along the straight line [line] (interior cuts through the
+  /// material), to take tabs made with the same count and width.
+  void addSlots(InkPath line, SlotRow row, {bool dogbones = true}) {
+    if (line.nodes.length < 2) return;
+    checkpoint();
+    final layer = layerOf(line) ?? drawing.activeLayer;
+    final made = <InkElement>[];
+    for (final slot in row.slots(line.nodes.first.anchorPoint, line.nodes.last.anchorPoint)) {
+      applyCut(slot, CutSpec(CutType.interior, depth: drawing.materialThickness));
+      final s = dogbones ? _withDogbones(slot, hole: true) : slot;
+      made.add(s);
+    }
+    layer.elements.insertAll(layer.elements.indexOf(line) + 1, made);
+    // The line becomes a guide: it marks where the part goes.
+    applyCut(line, CutSpec(CutType.guide));
+    selection
+      ..clear()
+      ..addAll(made);
+    notifyListeners();
+  }
+
   // ---- Exact sizes (Make mode's numbers bar and dimensions) ---------------
 
   /// The selection's size: a single live shape's own width and height (along
@@ -1914,3 +1994,14 @@ class DrawingController extends ChangeNotifier {
 
 /// The color menu's blend directions.
 enum ColorBlend { backToFront, horizontally, vertically }
+
+/// An edge (or line) the Joinery tool picked.
+class JointTarget {
+  final InkPath path;
+  final int segment;
+
+  /// A line to put slots along (rather than a part's edge).
+  bool get isLine => !path.closed;
+
+  const JointTarget(this.path, this.segment);
+}
