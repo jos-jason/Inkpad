@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../export/dxf_export.dart';
 import '../export/pdf_export.dart';
 import '../export/raster_export.dart';
 import '../model/drawing.dart';
@@ -72,6 +73,10 @@ Future<void> exportPng(BuildContext context, InkDrawing drawing, String name) as
     if (context.mounted) showSnack(context, 'Could not make the PNG: $e');
   }
 }
+
+/// Saves the drawing as DXF, for CAD/CAM programs and laser cutters.
+Future<void> exportDxf(BuildContext context, InkDrawing drawing, String name) =>
+    _save(context, _fileName(name, 'dxf'), drawingToDxf(drawing), 'image/vnd.dxf', 'dxf');
 
 /// Saves the page as a vector PDF.
 Future<void> exportPdf(BuildContext context, InkDrawing drawing, String name) async {

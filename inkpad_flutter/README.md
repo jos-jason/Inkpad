@@ -167,6 +167,21 @@ Done:
   - SVG export at true size (mm or in) with Shaper's `shaper:cutDepth`
     and letters as outlines; Shaper files open in Make mode with their
     cut types read from their colors.
+  - Cut preview (Settings): the bit's path at its real width, and the area
+    pockets clear, so rounded inside corners show before cutting.
+  - Path → Add Dogbones / Add T-bones: corner relief for the bit (ears past
+    a hole's corners, notches in a part's inside corners; T-bones past a
+    slot's ends). Path → Box Maker…: a finger-jointed box (outside or
+    inside sizes, material thickness, finger width, fit clearance, lid,
+    dogbones) laid out flat as cut-through panels.
+  - Path → Offset Path… (grow or shrink by a distance, round or sharp
+    corners); Edit → Repeat… (grids by center-to-center spacing, or copies
+    around a center).
+  - Snapping also finds midpoints, centers of live shapes and where edges
+    cross; the Measure tool (M) shows distance, across, down and angle.
+  - DXF export (R12, for CAD/CAM and laser software) at true size: live
+    circles as circles, rounded corners as true arcs, a layer per cut type
+    named with its depth (e.g. POCKET_D6MM).
 - AI (the ✨ button), with your own account: Claude (Anthropic), any
   OpenAI-compatible service (OpenAI, OpenRouter, Groq, LM Studio, Gemini's
   compatible endpoint…), or Ollama on your computer or network. Set it up
@@ -208,7 +223,7 @@ To port next (roughly in priority order; greyed out in the UI):
 ## Keyboard shortcuts
 
 V select · A direct select · O rotate · K scale · P pen · N add/delete point ·
-C scissors · B brush · F freehand · Shift+E eraser · I eyedropper · T text · R rect · E oval · S star · G polygon · L line · H hand ·
+C scissors · B brush · F freehand · Shift+E eraser · I eyedropper · T text · M measure · R rect · E oval · S star · G polygon · L line · H hand ·
 Ctrl/Cmd+Z undo · Shift+Ctrl/Cmd+Z redo · Ctrl/Cmd+D duplicate ·
 Ctrl/Cmd+G group · Shift+Ctrl/Cmd+G ungroup · Ctrl/Cmd+S save now ·
 Ctrl/Cmd+E export SVG · Ctrl/Cmd+7 make clipping mask ·

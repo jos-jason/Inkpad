@@ -89,6 +89,38 @@ class Pathfinder {
     return _toShape(_fromPaths(out), (a, b, c) => turnAngle(a, b, c) > 0.6);
   }
 
+  /// [shape] grown (positive [distance]) or shrunk (negative) by a fixed
+  /// distance, for clearances, inlays and tool paths. Open paths become the
+  /// outline [distance] around them. [round] corners, or sharp (mitered).
+  static InkStylable? offsetShape(InkStylable shape, double distance, {bool round = true}) {
+    final scale = math.pow(10, _precision).toDouble();
+    final co = cl.ClipperOffset(miterLimit: 10, arcTolerance: flatness * scale);
+    final join = round ? cl.JoinType.round : cl.JoinType.miter;
+    final open = [for (final (pts, closed) in _flattenSubpaths(shape)) if (!closed) pts];
+    final closedArea = shape is InkPath && !shape.closed ? <List<cl.PointD>>[] : _normalize(shape, _CornerOracle());
+    if (closedArea.isNotEmpty) co.addPaths(closedArea.scaledPaths64(scale), joinType: join, endType: cl.EndType.polygon);
+    if (open.isNotEmpty && distance > 0) {
+      co.addPaths(_toPaths(open).scaledPaths64(scale), joinType: join, endType: round ? cl.EndType.round : cl.EndType.square);
+    }
+    final out = co.execute(delta: distance * scale).scaledPathsD(1 / scale);
+    if (out.isEmpty) return null;
+    return _toShape(_fromPaths(out), (a, b, c) => turnAngle(a, b, c) > 0.35);
+  }
+
+  /// The area a round bit of [radius] can't reach into, filled: inside
+  /// corners rounded to the bit (for parts cut around the outside).
+  static InkStylable? roundInsideCorners(InkStylable shape, double radius) {
+    final grown = offsetShape(shape, radius, round: true);
+    return grown == null ? null : offsetShape(grown, -radius, round: true);
+  }
+
+  /// Outside corners rounded to the bit (for holes and pockets cut from
+  /// inside).
+  static InkStylable? roundOutsideCorners(InkStylable shape, double radius) {
+    final shrunk = offsetShape(shape, -radius, round: true);
+    return shrunk == null ? null : offsetShape(shrunk, radius, round: true);
+  }
+
   /// Erases [eraser]'s area from an open path, cutting it into the pieces
   /// that remain. Ported from -[WDPath erase:] for open paths.
   static List<InkPath> eraseOpen(InkPath path, InkStylable eraser) {

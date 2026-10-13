@@ -104,6 +104,9 @@ class InkDrawing {
   /// dimensions, and each shape says how it's cut.
   bool makeMode;
 
+  /// Make mode: show where the bit actually cuts.
+  bool showCutPreview;
+
   /// Inches shown as fractions (1 3/8") to the nearest 1/[inchDenominator];
   /// other units with [decimals] places.
   bool fractionalInches;
@@ -130,6 +133,7 @@ class InkDrawing {
     this.showGrid = false,
     this.gridSpacing = 36,
     this.makeMode = false,
+    this.showCutPreview = false,
     this.fractionalInches = true,
     this.inchDenominator = 32,
     this.decimals = 2,
@@ -241,6 +245,7 @@ class InkDrawing {
         'snap': {'points': snapToPoints, 'edges': snapToEdges, 'grid': snapToGrid},
         'grid': {'show': showGrid, 'spacing': gridSpacing},
         if (makeMode) 'make': true,
+        if (showCutPreview) 'cutPreview': true,
         'lengths': {'fractions': fractionalInches, 'denominator': inchDenominator, 'decimals': decimals},
         'material': {'thickness': materialThickness, 'bit': bitDiameter, 'depth': defaultCutDepth},
         'layers': layers.map((l) => l.toJson()).toList(),
@@ -265,6 +270,7 @@ class InkDrawing {
       showGrid: j['grid']?['show'] as bool? ?? false,
       gridSpacing: (j['grid']?['spacing'] as num?)?.toDouble() ?? 36,
       makeMode: j['make'] as bool? ?? false,
+      showCutPreview: j['cutPreview'] as bool? ?? false,
       fractionalInches: j['lengths']?['fractions'] as bool? ?? true,
       inchDenominator: j['lengths']?['denominator'] as int? ?? 32,
       decimals: j['lengths']?['decimals'] as int? ?? 2,

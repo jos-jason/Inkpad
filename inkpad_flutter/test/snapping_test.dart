@@ -47,13 +47,28 @@ void main() {
       final c = controllerWith([square(100, 100), square(103, 160)], points: true, edges: true);
       final r = c.snap(const Offset(104, 103), 10);
       expect((r.kind, r.point), (SnapKind.point, const Offset(100, 100)));
-      final edge = c.snap(const Offset(125, 104), 10);
-      expect((edge.kind, edge.point), (SnapKind.edge, const Offset(125, 100)));
+      final edge = c.snap(const Offset(137, 104), 10);
+      expect((edge.kind, edge.point), (SnapKind.edge, const Offset(137, 100)));
+      final mid = c.snap(const Offset(124, 104), 10);
+      expect((mid.kind, mid.point), (SnapKind.midpoint, const Offset(125, 100)));
       // The page's corners and edges.
       expect(c.snap(const Offset(395, 397), 10).point, const Offset(400, 400));
       expect((c.snap(const Offset(250, 3), 10).point - const Offset(250, 0)).distance, lessThan(1e-6));
       // Out of reach.
       expect(c.snap(const Offset(250, 250), 10).snapped, isFalse);
+    });
+
+    test('centers of live shapes, and where edges cross', () {
+      final circle = InkPath.live(LiveShape.inRect(LiveKind.ellipse, const Rect.fromLTWH(100, 100, 80, 80)));
+      final c = controllerWith([circle], points: true);
+      final r = c.snap(const Offset(143, 137), 10);
+      expect((r.kind, r.point), (SnapKind.center, const Offset(140, 140)));
+      final a = InkPath(nodes: [const BezierNode.anchor(Offset(0, 0)), const BezierNode.anchor(Offset(120, 120))]);
+      final b = InkPath(nodes: [const BezierNode.anchor(Offset(0, 100)), const BezierNode.anchor(Offset(120, -20))]);
+      final c2 = controllerWith([a, b], points: true, edges: true);
+      final x = c2.snap(const Offset(53, 49), 10);
+      expect(x.kind, SnapKind.intersection);
+      expect((x.point - const Offset(50, 50)).distance, lessThan(1e-9));
     });
 
     test('edges follow curves', () {

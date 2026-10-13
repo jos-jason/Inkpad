@@ -5,7 +5,7 @@ import '../model/element.dart';
 import 'drawing_controller.dart';
 
 /// What a point snapped to. Ported from WDPickResult's snap types.
-enum SnapKind { point, edge, grid }
+enum SnapKind { point, midpoint, center, intersection, edge, grid }
 
 class SnapResult {
   final Offset point;
@@ -42,35 +42,45 @@ extension Snapping on DrawingController {
     bool skipped(InkPath path, int i) => skipNode != null && skipNode(path, i);
     if (usePoints || useEdges) {
       Offset? bestPoint, bestEdge;
+      var pointKind = SnapKind.point;
       var pointDist = tolerance, edgeDist = tolerance;
+      // Edges near the pointer, for finding where they cross.
+      final nearby = <BezierSegment>[];
 
-      void consider(Offset candidate, bool isPoint) {
+      void consider(Offset candidate, bool isPoint, [SnapKind kind = SnapKind.point]) {
         final dist = (candidate - p).distance;
         if (isPoint && dist < pointDist) {
           pointDist = dist;
           bestPoint = candidate;
+          pointKind = kind;
         } else if (!isPoint && dist < edgeDist) {
           edgeDist = dist;
           bestEdge = candidate;
         }
       }
 
+      /// Midpoints of edges (CAD snapping).
+      void midpointOf(BezierSegment s) => consider(s.pointAt(0.5), true, SnapKind.midpoint);
+
       void path(InkPath path) {
         if (path.nodes.isEmpty) return;
         if (!path.controlBounds.inflate(tolerance).contains(p)) return;
+        final segs = path.segments.toList();
         if (usePoints) {
           for (var i = 0; i < path.nodes.length; i++) {
             if (skipped(path, i)) continue;
             consider(path.nodes[i].anchorPoint, true);
           }
+          // Centers of live shapes (circles, rectangles, …).
+          final live = path.live;
+          if (live != null && live.kind != LiveKind.line) consider(live.center, true, SnapKind.center);
         }
-        if (useEdges) {
-          final segs = path.segments.toList();
-          for (var i = 0; i < segs.length; i++) {
-            // Not along the edges next to the point being dragged.
-            if (skipped(path, i) || skipped(path, (i + 1) % path.nodes.length)) continue;
-            consider(_nearestOn(segs[i], p), false);
-          }
+        for (var i = 0; i < segs.length; i++) {
+          // Not along the edges next to the point being dragged.
+          if (skipped(path, i) || skipped(path, (i + 1) % path.nodes.length)) continue;
+          if (usePoints) midpointOf(segs[i]);
+          if (useEdges) consider(_nearestOn(segs[i], p), false);
+          if (usePoints && useEdges && segs[i].bounds.inflate(tolerance).contains(p)) nearby.add(segs[i]);
         }
       }
 
@@ -80,11 +90,12 @@ extension Snapping on DrawingController {
             consider(c, true);
           }
         }
-        if (useEdges) {
-          for (var i = 0; i < corners.length; i++) {
-            final next = corners[(i + 1) % corners.length];
-            consider(_nearestOn(BezierSegment(corners[i], corners[i], next, next), p), false);
-          }
+        for (var i = 0; i < corners.length; i++) {
+          final next = corners[(i + 1) % corners.length];
+          final s = BezierSegment(corners[i], corners[i], next, next);
+          if (usePoints) midpointOf(s);
+          if (useEdges) consider(_nearestOn(s, p), false);
+          if (usePoints && useEdges && s.bounds.inflate(tolerance).contains(p)) nearby.add(s);
         }
       }
 
@@ -122,12 +133,48 @@ extension Snapping on DrawingController {
       final b = d.bounds;
       polygon([b.topLeft, b.topRight, b.bottomRight, b.bottomLeft]);
 
+      // Where nearby edges cross.
+      for (var i = 0; i < nearby.length; i++) {
+        for (var j = i + 1; j < nearby.length; j++) {
+          for (final x in _crossings(nearby[i], nearby[j])) {
+            consider(x, true, SnapKind.intersection);
+          }
+        }
+      }
+
       // Points take priority over edges, as in Inkpad.
-      if (bestPoint != null) return SnapResult(bestPoint!, SnapKind.point);
+      if (bestPoint != null) return SnapResult(bestPoint!, pointKind);
       if (bestEdge != null) return SnapResult(bestEdge!, SnapKind.edge);
     }
     if (grid && d.snapToGrid) return SnapResult(gridPoint(p), SnapKind.grid);
     return SnapResult(p);
+  }
+
+  /// Where two edges cross (curves are followed as fine polylines; straight
+  /// edges exactly).
+  static List<Offset> _crossings(BezierSegment a, BezierSegment b) {
+    if (!a.bounds.inflate(0.001).overlaps(b.bounds.inflate(0.001))) return const [];
+    List<Offset> poly(BezierSegment s) => s.isStraight ? [s.a, s.b] : [for (var i = 0; i <= 32; i++) s.pointAt(i / 32)];
+    final pa = poly(a), pb = poly(b);
+    final out = <Offset>[];
+    for (var i = 0; i + 1 < pa.length; i++) {
+      for (var j = 0; j + 1 < pb.length; j++) {
+        final x = _lineCrossing(pa[i], pa[i + 1], pb[j], pb[j + 1]);
+        if (x != null) out.add(x);
+      }
+    }
+    return out;
+  }
+
+  static Offset? _lineCrossing(Offset p1, Offset p2, Offset p3, Offset p4) {
+    final d1 = p2 - p1, d2 = p4 - p3;
+    final den = d1.dx * d2.dy - d1.dy * d2.dx;
+    if (den.abs() < 1e-12) return null;
+    final t = ((p3.dx - p1.dx) * d2.dy - (p3.dy - p1.dy) * d2.dx) / den;
+    final u = ((p3.dx - p1.dx) * d1.dy - (p3.dy - p1.dy) * d1.dx) / den;
+    // Shared end points (corners) are snapped to anyway.
+    if (t <= 1e-9 || t >= 1 - 1e-9 || u <= 1e-9 || u >= 1 - 1e-9) return null;
+    return p1 + d1 * t;
   }
 
   /// The nearest point to [p] on [s]: exact on straight edges.

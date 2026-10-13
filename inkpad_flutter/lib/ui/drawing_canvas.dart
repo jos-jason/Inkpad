@@ -9,6 +9,7 @@ import '../model/drawing.dart';
 import '../model/element.dart';
 import '../model/style.dart';
 import '../text/font_library.dart';
+import 'make/cut_preview.dart';
 import '../tools/tool.dart';
 
 /// Where the canvas is looking: screen = doc * scale + offset. Shared with
@@ -325,6 +326,7 @@ class _CanvasPainter extends CustomPainter {
     final visible = Rect.fromLTWH(-offset.dx / scale, -offset.dy / scale, size.width / scale, size.height / scale);
     if (drawing.showGrid) _paintGrid(canvas, visible);
     drawing.render(canvas, visible);
+    if (drawing.makeMode && drawing.showCutPreview) CutPreview.paint(canvas, drawing);
 
     _paintSelection(canvas);
     controller.tool.paintOverlay(canvas, controller, scale);
@@ -375,6 +377,23 @@ class _CanvasPainter extends CustomPainter {
       case SnapKind.grid:
         canvas.drawLine(p - Offset(5 * px, 0), p + Offset(5 * px, 0), ring);
         canvas.drawLine(p - Offset(0, 5 * px), p + Offset(0, 5 * px), ring);
+      case SnapKind.midpoint:
+        final tri = Path()
+          ..moveTo(p.dx, p.dy - 6 * px)
+          ..lineTo(p.dx + 6 * px, p.dy + 5 * px)
+          ..lineTo(p.dx - 6 * px, p.dy + 5 * px)
+          ..close();
+        canvas.drawPath(tri, halo);
+        canvas.drawPath(tri, ring);
+      case SnapKind.center:
+        canvas.drawCircle(p, 6 * px, halo);
+        canvas.drawCircle(p, 5 * px, ring);
+        canvas.drawLine(p - Offset(3 * px, 0), p + Offset(3 * px, 0), ring);
+        canvas.drawLine(p - Offset(0, 3 * px), p + Offset(0, 3 * px), ring);
+      case SnapKind.intersection:
+        canvas.drawCircle(p, 6 * px, halo);
+        canvas.drawLine(p - Offset(5 * px, 5 * px), p + Offset(5 * px, 5 * px), ring);
+        canvas.drawLine(p - Offset(5 * px, -5 * px), p + Offset(5 * px, -5 * px), ring);
     }
   }
 

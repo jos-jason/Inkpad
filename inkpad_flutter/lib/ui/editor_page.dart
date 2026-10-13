@@ -15,6 +15,7 @@ import 'ai/ai_panel.dart';
 import 'chrome/chrome.dart';
 import 'make/cut_panel.dart';
 import 'make/dimension_overlay.dart';
+import 'make/make_dialogs.dart';
 import 'make/numbers_bar.dart';
 import 'chrome/color_editor.dart';
 import 'chrome/rulers.dart';
@@ -77,6 +78,7 @@ class _EditorPageState extends State<EditorPage> {
   final _scale = ScaleTool();
   final _rotate = RotateTool();
   final _text = TextTool();
+  final _measure = MeasureTool();
   final _hand = HandTool();
 
   late final _shapes = PaletteGroup([
@@ -105,6 +107,7 @@ class _EditorPageState extends State<EditorPage> {
     _shapes,
     PaletteTool('Text', const ToolIcon(ToolIcon.text), _text, shortcut: 'T'),
     PaletteTool('Eyedropper', const Icon(Icons.colorize), _eyedropper, shortcut: 'I'),
+    PaletteTool('Measure', const Icon(Icons.straighten), _measure, shortcut: 'M'),
     PaletteTool('Scale', const ToolIcon(ToolIcon.scale), _scale, shortcut: 'K'),
     PaletteTool('Rotate', const ToolIcon(ToolIcon.rotate), _rotate, shortcut: 'O'),
   ];
@@ -227,7 +230,7 @@ class _EditorPageState extends State<EditorPage> {
     };
     final shortcutTools = <String, Tool>{
       'V': _select, 'A': _direct, 'P': _pen, 'N': _anchor, 'R': _rect, 'E': _oval, 'S': _star, 'G': _polygon, 'L': _line,
-      'K': _scale, 'O': _rotate, 'H': _hand, 'C': _scissors, 'B': _brush, 'F': _freehand, 'I': _eyedropper, 'T': _text,
+      'K': _scale, 'O': _rotate, 'H': _hand, 'C': _scissors, 'B': _brush, 'F': _freehand, 'I': _eyedropper, 'T': _text, 'M': _measure,
     };
     map[const SingleActivator(LogicalKeyboardKey.keyE, shift: true)] = () => _setTool(_eraser);
     for (final MapEntry(key: letter, value: tool) in shortcutTools.entries) {
@@ -285,6 +288,7 @@ class _EditorPageState extends State<EditorPage> {
       const MenuDivider(),
       MenuAction('Transform Again', again ? c.transformAgain : null),
       MenuAction('Duplicate and Transform Again', again ? c.duplicateAndTransformAgain : null),
+      MenuAction('Repeat…', sel ? () => showRepeatDialog(context, c) : null),
       const MenuDivider(),
       MenuAction('Delete', sel ? c.deleteSelection : null),
     ];
@@ -330,6 +334,13 @@ class _EditorPageState extends State<EditorPage> {
         MenuAction('Convert to Path', c.canConvertToPaths ? c.convertToPaths : null),
         const MenuDivider(),
       ],
+      MenuAction('Offset Path…', c.canOffsetPaths ? () => showOffsetDialog(context, c) : null),
+      if (c.drawing.makeMode) ...[
+        MenuAction('Add Dogbones', c.canAddDogbones ? c.addDogbones : null),
+        MenuAction('Add T-bones', c.canAddDogbones ? () => c.addDogbones(tBone: true) : null),
+        MenuAction('Box Maker…', () => showBoxMakerDialog(context, c)),
+      ],
+      const MenuDivider(),
       MenuAction('Add Anchor Points', c.canAddAnchors ? c.addAnchorPoints : null),
       MenuAction('Delete Anchor Points', c.canDeleteAnchors ? c.deleteSelectedAnchors : null),
       MenuAction('Join Paths', c.canJoinPaths ? c.joinPaths : null),
@@ -583,6 +594,7 @@ class _EditorPageState extends State<EditorPage> {
         MenuAction('Export SVG…', () => exportSvg(context, controller.drawing, widget.info.name)),
         MenuAction('Export PNG…', () => exportPng(context, controller.drawing, widget.info.name)),
         MenuAction('Export PDF…', () => exportPdf(context, controller.drawing, widget.info.name)),
+        MenuAction('Export DXF…', () => exportDxf(context, controller.drawing, widget.info.name)),
         MenuAction('Export .inkpad…', () => exportInkpad(context, controller.drawing, widget.info.name)),
         MenuAction('Copy SVG', () => copySvg(context, controller.drawing)),
       ];

@@ -67,6 +67,13 @@ class SettingsPanel extends StatelessWidget {
             onChanged: (v) => set(() => d.decimals = v ?? 2),
           ),
         ),
+      SwitchListTile(
+        dense: true,
+        title: const Text('Show cut preview'),
+        subtitle: const Text('Where the bit goes, at its real width'),
+        value: d.showCutPreview,
+        onChanged: (v) => set(() => d.showCutPreview = v),
+      ),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: Text('Material and bit', style: theme.textTheme.titleSmall),

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 
+import '../geometry/make_ops.dart';
 import '../geometry/pathfinder.dart';
 import '../model/bezier_node.dart';
 import '../model/drawing.dart';
@@ -98,6 +99,120 @@ class DrawingController extends ChangeNotifier {
   void setLiveShape(InkPath p, LiveShape shape, {bool record = true}) {
     if (record) checkpoint();
     p.live = shape;
+    notifyListeners();
+  }
+
+  // ---- Shop helpers (Make mode) ---------------------------------------------
+
+  /// Selected shapes that can be offset or relieved (not text or images).
+  List<InkStylable> get _shapes => [
+        for (final e in orderedSelection)
+          if (e is InkPath || e is InkCompoundPath) e as InkStylable,
+      ];
+
+  bool get canOffsetPaths => _shapes.isNotEmpty;
+
+  /// Adds a copy of each selected shape grown (or, negative, shrunk) by
+  /// [distance], just above it, with the same style and cut.
+  void offsetPaths(double distance, {bool round = true}) {
+    final shapes = _shapes;
+    if (shapes.isEmpty || distance == 0) return;
+    checkpoint();
+    final made = <InkElement>[];
+    for (final s in shapes) {
+      final r = Pathfinder.offsetShape(s, distance, round: round);
+      if (r == null) continue;
+      r
+        ..fill = s.fill
+        ..stroke = s.stroke
+        ..cut = s.cut
+        ..copyEffects(s);
+      final layer = layerOf(s)!;
+      layer.elements.insert(layer.elements.indexOf(s) + 1, r);
+      made.add(r);
+    }
+    if (made.isEmpty) showHint('Nothing was left: the shapes are smaller than that.');
+    selection
+      ..clear()
+      ..addAll(made.isEmpty ? shapes : made);
+    notifyListeners();
+  }
+
+  bool get canAddDogbones => _shapes.any((s) => s.cut?.type != CutType.online && s.cut?.type != CutType.guide);
+
+  /// Relieves corners for the drawing's bit: holes and pockets get ears
+  /// past their corners, parts get notches in their inside corners, so
+  /// square-cornered pieces fit. [tBone] puts the relief past the shorter
+  /// sides (a slot's ends). The shapes become plain paths.
+  void addDogbones({bool tBone = false}) {
+    final shapes = [for (final s in _shapes) if (s.cut?.type != CutType.online && s.cut?.type != CutType.guide) s];
+    if (shapes.isEmpty) return;
+    checkpoint();
+    final radius = drawing.bitDiameter / 2;
+    var changed = 0;
+    final result = <InkElement>[];
+    for (final s in shapes) {
+      final hole = s.cut?.type == CutType.interior || s.cut?.type == CutType.pocket;
+      final r = MakeOps.dogbones(s, radius, forHole: hole, tBone: tBone);
+      if (r == null) {
+        result.add(s);
+        continue;
+      }
+      r
+        ..fill = s.fill
+        ..stroke = s.stroke
+        ..cut = s.cut
+        ..copyEffects(s);
+      final layer = layerOf(s)!;
+      layer.elements[layer.elements.indexOf(s)] = r;
+      result.add(r);
+      changed++;
+    }
+    if (changed == 0) showHint('No corners needed relief.');
+    selection
+      ..clear()
+      ..addAll(result);
+    notifyListeners();
+  }
+
+  /// Repeats the selection in a grid (center-to-center pitches) or around
+  /// a center; the copies are selected along with the originals.
+  void repeatGrid({required int columns, required int rows, required double pitchX, required double pitchY}) {
+    if (selection.isEmpty || columns * rows < 2) return;
+    _addCopies(MakeOps.grid(orderedSelection, columns: columns, rows: rows, pitchX: pitchX, pitchY: pitchY));
+  }
+
+  void repeatAround({required int count, required Offset center, required double stepDegrees}) {
+    if (selection.isEmpty || count < 2) return;
+    _addCopies(MakeOps.circular(orderedSelection, count: count, center: center, stepDegrees: stepDegrees));
+  }
+
+  void _addCopies(List<InkElement> copies) {
+    checkpoint();
+    final layer = layerOf(selection.first) ?? drawing.activeLayer;
+    layer.elements.addAll(copies);
+    selection.addAll(copies);
+    notifyListeners();
+  }
+
+  /// Adds a finger-jointed box's panels, laid out flat at [origin] and
+  /// cut around the outside through the material (with dogbones in their
+  /// inside corners when [dogbones]). They're selected as a group.
+  void makeBox(BoxMaker box, {Offset origin = Offset.zero, bool dogbones = true}) {
+    checkpoint();
+    final gap = drawing.bitDiameter * 2 + 10 * 72 / 25.4;
+    final panels = <InkElement>[];
+    for (final (_, outline) in box.panels(origin: origin, gap: gap)) {
+      InkStylable panel = outline;
+      if (dogbones) panel = MakeOps.dogbones(outline, drawing.bitDiameter / 2, forHole: false) ?? outline;
+      applyCut(panel, CutSpec(CutType.exterior, depth: box.thickness));
+      panels.add(panel);
+    }
+    final group = InkGroup(panels);
+    drawing.activeLayer.elements.add(group);
+    selection
+      ..clear()
+      ..add(group);
     notifyListeners();
   }
 
