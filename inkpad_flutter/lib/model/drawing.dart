@@ -2,11 +2,13 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'cam.dart';
 import 'element.dart';
 import 'geometry.dart';
 import 'style.dart';
 import 'units.dart';
 
+export 'cam.dart';
 export 'units.dart';
 
 /// Ported from WDLayer.
@@ -107,6 +109,9 @@ class InkDrawing {
   /// Make mode: show where the bit actually cuts.
   bool showCutPreview;
 
+  /// Feeds, speeds and tabs for G-code.
+  CamSettings cam;
+
   /// Inches shown as fractions (1 3/8") to the nearest 1/[inchDenominator];
   /// other units with [decimals] places.
   bool fractionalInches;
@@ -134,13 +139,15 @@ class InkDrawing {
     this.gridSpacing = 36,
     this.makeMode = false,
     this.showCutPreview = false,
+    CamSettings? cam,
     this.fractionalInches = true,
     this.inchDenominator = 32,
     this.decimals = 2,
     this.materialThickness = 18 * 72 / 25.4,
     this.bitDiameter = 6 * 72 / 25.4,
     this.defaultCutDepth = 6 * 72 / 25.4,
-  }) : layers = layers ?? [InkLayer(name: 'Layer 1')];
+  })  : cam = cam ?? CamSettings(),
+        layers = layers ?? [InkLayer(name: 'Layer 1')];
 
   Rect get bounds => Rect.fromLTWH(0, 0, width, height);
 
@@ -246,6 +253,7 @@ class InkDrawing {
         'grid': {'show': showGrid, 'spacing': gridSpacing},
         if (makeMode) 'make': true,
         if (showCutPreview) 'cutPreview': true,
+        'cam': cam.toJson(),
         'lengths': {'fractions': fractionalInches, 'denominator': inchDenominator, 'decimals': decimals},
         'material': {'thickness': materialThickness, 'bit': bitDiameter, 'depth': defaultCutDepth},
         'layers': layers.map((l) => l.toJson()).toList(),
@@ -271,6 +279,7 @@ class InkDrawing {
       gridSpacing: (j['grid']?['spacing'] as num?)?.toDouble() ?? 36,
       makeMode: j['make'] as bool? ?? false,
       showCutPreview: j['cutPreview'] as bool? ?? false,
+      cam: j['cam'] == null ? null : CamSettings.fromJson(j['cam']),
       fractionalInches: j['lengths']?['fractions'] as bool? ?? true,
       inchDenominator: j['lengths']?['denominator'] as int? ?? 32,
       decimals: j['lengths']?['decimals'] as int? ?? 2,

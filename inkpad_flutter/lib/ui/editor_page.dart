@@ -15,6 +15,7 @@ import 'ai/ai_panel.dart';
 import 'chrome/chrome.dart';
 import 'make/cut_panel.dart';
 import 'make/dimension_overlay.dart';
+import 'make/gcode_dialog.dart';
 import 'make/make_dialogs.dart';
 import 'make/numbers_bar.dart';
 import 'chrome/color_editor.dart';
@@ -605,6 +606,8 @@ class _EditorPageState extends State<EditorPage> {
         MenuAction('Export PNG…', () => exportPng(context, controller.drawing, widget.info.name)),
         MenuAction('Export PDF…', () => exportPdf(context, controller.drawing, widget.info.name)),
         MenuAction('Export DXF…', () => exportDxf(context, controller.drawing, widget.info.name)),
+        if (controller.drawing.makeMode)
+          MenuAction('Export G-code…', () => showGcodeDialog(context, controller.drawing, widget.info.name)),
         MenuAction('Export .inkpad…', () => exportInkpad(context, controller.drawing, widget.info.name)),
         MenuAction('Copy SVG', () => copySvg(context, controller.drawing)),
       ];

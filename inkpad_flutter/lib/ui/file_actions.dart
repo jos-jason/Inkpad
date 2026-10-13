@@ -184,6 +184,9 @@ Future<void> copySvg(BuildContext context, InkDrawing drawing) async {
   if (context.mounted) showSnack(context, 'SVG copied to clipboard');
 }
 
+/// Saves [bytes] through the system's save dialog (or a download on the web).
+Future<void> saveFile(BuildContext context, String name, List<int> bytes, String mime, String ext) => _save(context, name, bytes, mime, ext);
+
 Future<void> _save(BuildContext context, String name, List<int> bytes, String mime, String ext) async {
   try {
     final uri = await FilePicker.saveFile(

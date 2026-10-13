@@ -182,6 +182,16 @@ Done:
   - DXF export (R12, for CAD/CAM and laser software) at true size: live
     circles as circles, rounded corners as true arcs, a layer per cut type
     named with its depth (e.g. POCKET_D6MM).
+  - DXF import (gallery import and Place): lines, polylines with arcs,
+    circles, arcs, ellipses, splines and blocks; touching pieces joined
+    into outlines; true size from the file's units.
+  - Joinery tool (J): click a part's straight edge for fingers or tabs, or
+    a straight line for matching slots (tab-and-slot), with fit clearance
+    and dogbones.
+  - Export G-code… (GRBL and similar routers): profiles offset by the bit,
+    pockets cleared in rings, depth passes, holding tabs on through-cuts,
+    conventional or climb milling, pockets and holes before parts; a
+    preview to play the job through, with cut length and time.
 - AI (the ✨ button), with your own account: Claude (Anthropic), any
   OpenAI-compatible service (OpenAI, OpenRouter, Groq, LM Studio, Gemini's
   compatible endpoint…), or Ollama on your computer or network. Set it up
@@ -223,7 +233,7 @@ To port next (roughly in priority order; greyed out in the UI):
 ## Keyboard shortcuts
 
 V select · A direct select · O rotate · K scale · P pen · N add/delete point ·
-C scissors · B brush · F freehand · Shift+E eraser · I eyedropper · T text · M measure · R rect · E oval · S star · G polygon · L line · H hand ·
+C scissors · B brush · F freehand · Shift+E eraser · I eyedropper · T text · M measure · J joinery · R rect · E oval · S star · G polygon · L line · H hand ·
 Ctrl/Cmd+Z undo · Shift+Ctrl/Cmd+Z redo · Ctrl/Cmd+D duplicate ·
 Ctrl/Cmd+G group · Shift+Ctrl/Cmd+G ungroup · Ctrl/Cmd+S save now ·
 Ctrl/Cmd+E export SVG · Ctrl/Cmd+7 make clipping mask ·
