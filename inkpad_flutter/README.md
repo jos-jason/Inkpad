@@ -123,6 +123,9 @@ Done:
   (including the page edges), Snap to Grid, Show Grid and Grid Spacing.
   Shapes, lines, pen points and handles, text boxes, dragged points and
   moved or scaled selections snap; a marker shows what was snapped to
+- Settings → Canvas size…: any width and height (in any unit), presets
+  (paper, screen and sheet-goods sizes), which part of the page the
+  artwork stays with, or fit the page to the artwork with a margin
 - Rulers in in/cm/mm/pt/px (Settings)
 - Scale tool (port of WDScaleTool), alongside the scale handles
 - Rotation: the knob above a selection (select tool), or the Rotate tool

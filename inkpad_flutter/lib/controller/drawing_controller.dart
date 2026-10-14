@@ -650,6 +650,54 @@ class DrawingController extends ChangeNotifier {
     });
   }
 
+  // ---- Canvas size ------------------------------------------------------------
+
+  /// Makes the page [width] × [height] (points). [anchor] says which part of
+  /// the page the artwork stays with (top-left, centre, …): the rest grows
+  /// or shrinks around it.
+  void resizeCanvas(double width, double height, {Alignment anchor = Alignment.topLeft}) {
+    if (width <= 0 || height <= 0) return;
+    if (width == drawing.width && height == drawing.height) return;
+    batch(() {
+      final dx = (width - drawing.width) * (anchor.x + 1) / 2, dy = (height - drawing.height) * (anchor.y + 1) / 2;
+      _shiftArtwork(dx, dy);
+      drawing
+        ..width = width
+        ..height = height;
+    });
+  }
+
+  /// The bounds of everything in the drawing (as painted), or null if empty.
+  Rect? get artworkBounds {
+    Rect? r;
+    for (final e in drawing.allElements) {
+      r = unionRects(r, e.styleBounds);
+    }
+    return r;
+  }
+
+  /// Fits the page around the artwork with [margin] all round.
+  void fitCanvasToArtwork({double margin = 0}) {
+    final b = artworkBounds;
+    if (b == null) return;
+    batch(() {
+      _shiftArtwork(margin - b.left, margin - b.top);
+      drawing
+        ..width = math.max(1, b.width + margin * 2)
+        ..height = math.max(1, b.height + margin * 2);
+    });
+  }
+
+  void _shiftArtwork(double dx, double dy) {
+    if (dx == 0 && dy == 0) return;
+    final t = Affine.translation(dx, dy);
+    for (final l in drawing.layers) {
+      for (final e in l.elements) {
+        e.transform(t);
+      }
+    }
+  }
+
   /// Where the point being dragged snapped to, shown on the canvas.
   SnapResult? snapFeedback;
 

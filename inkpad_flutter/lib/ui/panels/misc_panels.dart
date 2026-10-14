@@ -6,6 +6,7 @@ import '../ai/ai_settings_page.dart';
 import '../chrome/chrome.dart';
 import '../make/length_field.dart';
 import '../make/rules_dialogs.dart';
+import 'canvas_size_dialog.dart';
 
 /// Drawing settings. Ported in spirit from Inkpad's WDSettingsController.
 class SettingsPanel extends StatelessWidget {
@@ -103,6 +104,12 @@ class SettingsPanel extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const PopoverHeader('Settings'),
+            ListTile(
+              leading: const Icon(Icons.aspect_ratio),
+              title: const Text('Canvas size…'),
+              subtitle: Text('${d.lengths.format(d.width)} × ${d.lengths.format(d.height)}'),
+              onTap: () => showCanvasSizeDialog(context, controller),
+            ),
             ListTile(
               leading: const Icon(Icons.auto_awesome_outlined),
               title: const Text('AI services…'),

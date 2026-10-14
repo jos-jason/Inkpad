@@ -241,7 +241,16 @@ class DrawingCanvasState extends State<DrawingCanvas> {
     super.dispose();
   }
 
-  void _onControllerChanged() => setState(() {});
+  /// The page size last shown: when it changes (Canvas Size…), the page is
+  /// fitted to the screen again.
+  Size? _pageSize;
+
+  void _onControllerChanged() {
+    final page = Size(c.drawing.width, c.drawing.height);
+    if (_pageSize != null && page != _pageSize) WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? fitToScreen() : null);
+    _pageSize = page;
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
