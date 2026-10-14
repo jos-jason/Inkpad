@@ -89,8 +89,16 @@ class _DimensionOverlayState extends State<DimensionOverlay> {
                         value: value,
                         lengths: lengths,
                         width: 140,
+                        formula: c.formulaFor(which)?.text,
+                        onFormula: c.selection.length == 1
+                            ? (text, v) {
+                                setState(() => _editing = null);
+                                c.setFormula(which, text, v);
+                              }
+                            : null,
                         onChanged: (v) {
                           setState(() => _editing = null);
+                          c.clearFormula(which);
                           if (which == 'w') {
                             c.resizeSelection(width: v);
                           } else {
@@ -110,7 +118,7 @@ class _DimensionOverlayState extends State<DimensionOverlay> {
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                             child: Text(
-                              lengths.format(value),
+                              '${c.formulaFor(which) != null ? 'ƒ ' : ''}${lengths.format(value)}',
                               style: TextStyle(color: Theme.of(context).colorScheme.onPrimary, fontSize: 12, fontWeight: FontWeight.w600),
                             ),
                           ),

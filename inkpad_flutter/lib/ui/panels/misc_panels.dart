@@ -5,6 +5,7 @@ import '../../model/drawing.dart';
 import '../ai/ai_settings_page.dart';
 import '../chrome/chrome.dart';
 import '../make/length_field.dart';
+import '../make/rules_dialogs.dart';
 
 /// Drawing settings. Ported in spirit from Inkpad's WDSettingsController.
 class SettingsPanel extends StatelessWidget {
@@ -81,6 +82,13 @@ class SettingsPanel extends StatelessWidget {
       row('Material thickness', LengthField(value: d.materialThickness, lengths: d.lengths, onChanged: (v) => set(() => d.materialThickness = v), width: 120)),
       row('Bit diameter', LengthField(value: d.bitDiameter, lengths: d.lengths, onChanged: (v) => set(() => d.bitDiameter = v), width: 120)),
       row('Default cut depth', LengthField(value: d.defaultCutDepth, lengths: d.lengths, onChanged: (v) => set(() => d.defaultCutDepth = v), width: 120)),
+      ListTile(
+        dense: true,
+        leading: const Icon(Icons.functions),
+        title: const Text('Measurements…'),
+        subtitle: Text(d.variables.isEmpty ? 'Name sizes like thickness, and size shapes with them' : d.variables.map((v) => v.name).join(', ')),
+        onTap: () => showMeasurementsDialog(context, controller),
+      ),
       const SizedBox(height: 8),
     ];
   }

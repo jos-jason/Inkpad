@@ -9,6 +9,7 @@ import 'style.dart';
 import 'units.dart';
 
 export 'cam.dart';
+export 'rules.dart';
 export 'units.dart';
 
 /// Ported from WDLayer.
@@ -112,6 +113,9 @@ class InkDrawing {
   /// Feeds, speeds and tabs for G-code.
   CamSettings cam;
 
+  /// Named measurements (thickness, width, …) that sizes can be typed with.
+  final List<MakeVariable> variables;
+
   /// Inches shown as fractions (1 3/8") to the nearest 1/[inchDenominator];
   /// other units with [decimals] places.
   bool fractionalInches;
@@ -140,6 +144,7 @@ class InkDrawing {
     this.makeMode = false,
     this.showCutPreview = false,
     CamSettings? cam,
+    List<MakeVariable>? variables,
     this.fractionalInches = true,
     this.inchDenominator = 32,
     this.decimals = 2,
@@ -147,6 +152,7 @@ class InkDrawing {
     this.bitDiameter = 6 * 72 / 25.4,
     this.defaultCutDepth = 6 * 72 / 25.4,
   })  : cam = cam ?? CamSettings(),
+        variables = variables ?? [],
         layers = layers ?? [InkLayer(name: 'Layer 1')];
 
   Rect get bounds => Rect.fromLTWH(0, 0, width, height);
@@ -157,6 +163,7 @@ class InkDrawing {
         fractions: fractionalInches,
         denominator: inchDenominator,
         decimals: units == 'in' ? 3 : decimals,
+        variables: variables.isEmpty ? null : VariableScope(variables).lookup,
       );
 
   InkLayer get activeLayer => layers[activeLayerIndex];
@@ -188,6 +195,9 @@ class InkDrawing {
   /// Ported from -[WDDrawing duplicateActiveLayer].
   void duplicateActiveLayer() {
     final copy = InkLayer.fromJson(activeLayer.toJson())..name = '${activeLayer.name} copy';
+    for (final e in copy.elements) {
+      e.forgetIdentity();
+    }
     layers.insert(activeLayerIndex + 1, copy);
     activeLayerIndex++;
   }
@@ -254,6 +264,7 @@ class InkDrawing {
         if (makeMode) 'make': true,
         if (showCutPreview) 'cutPreview': true,
         'cam': cam.toJson(),
+        if (variables.isNotEmpty) 'variables': [for (final v in variables) v.toJson()],
         'lengths': {'fractions': fractionalInches, 'denominator': inchDenominator, 'decimals': decimals},
         'material': {'thickness': materialThickness, 'bit': bitDiameter, 'depth': defaultCutDepth},
         'layers': layers.map((l) => l.toJson()).toList(),
@@ -280,6 +291,7 @@ class InkDrawing {
       makeMode: j['make'] as bool? ?? false,
       showCutPreview: j['cutPreview'] as bool? ?? false,
       cam: j['cam'] == null ? null : CamSettings.fromJson(j['cam']),
+      variables: [for (final v in (j['variables'] as List?) ?? const []) MakeVariable.fromJson(v)],
       fractionalInches: j['lengths']?['fractions'] as bool? ?? true,
       inchDenominator: j['lengths']?['denominator'] as int? ?? 32,
       decimals: j['lengths']?['decimals'] as int? ?? 2,

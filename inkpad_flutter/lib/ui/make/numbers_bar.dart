@@ -31,8 +31,24 @@ class _NumbersBarState extends State<NumbersBar> {
     final live = livePath?.live;
     final theme = Theme.of(context);
 
-    Widget field(String label, double value, ValueChanged<double> onChanged, {double width = 104}) =>
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: LengthField(label: label, value: value, lengths: lengths, onChanged: onChanged, width: width));
+    // With one shape selected, sizes typed with named measurements are kept
+    // as formulas (key: 'x', 'y', 'w', 'h' or 'corner').
+    final single = c.selection.length == 1;
+    Widget field(String label, double value, ValueChanged<double> onChanged, {double width = 104, String? key}) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: LengthField(
+            label: label,
+            value: value,
+            lengths: lengths,
+            width: width,
+            formula: key == null ? null : c.formulaFor(key)?.text,
+            onFormula: key == null || !single ? null : (text, v) => c.setFormula(key, text, v),
+            onChanged: (v) {
+              if (key != null) c.clearFormula(key);
+              onChanged(v);
+            },
+          ),
+        );
 
     Widget number(String label, double value, ValueChanged<double> onChanged, {String Function(double)? format, double? Function(String)? parse, double width = 72}) =>
         Padding(
@@ -50,9 +66,9 @@ class _NumbersBarState extends State<NumbersBar> {
 
     final isLine = live?.kind == LiveKind.line;
     final children = <Widget>[
-      field('X', m.bounds.left, (v) => c.moveSelectionTo(x: v)),
-      field('Y', m.bounds.top, (v) => c.moveSelectionTo(y: v)),
-      field(isLine ? 'Length' : 'W', m.width, (v) => c.resizeSelection(width: v, keepProportions: _keepProportions && !isLine)),
+      field('X', m.bounds.left, (v) => c.moveSelectionTo(x: v), key: 'x'),
+      field('Y', m.bounds.top, (v) => c.moveSelectionTo(y: v), key: 'y'),
+      field(isLine ? 'Length' : 'W', m.width, (v) => c.resizeSelection(width: v, keepProportions: _keepProportions && !isLine), key: 'w'),
       if (!isLine) ...[
         IconButton(
           tooltip: _keepProportions ? 'Proportions locked' : 'Keep proportions',
@@ -60,12 +76,12 @@ class _NumbersBarState extends State<NumbersBar> {
           icon: Icon(_keepProportions ? Icons.link : Icons.link_off, size: 20),
           onPressed: () => setState(() => _keepProportions = !_keepProportions),
         ),
-        field('H', m.height, (v) => c.resizeSelection(height: v, keepProportions: _keepProportions)),
+        field('H', m.height, (v) => c.resizeSelection(height: v, keepProportions: _keepProportions), key: 'h'),
       ],
       if (live != null)
         number('Angle', live.angle, c.setLiveAngle, format: formatDegrees),
       if (live?.kind == LiveKind.rectangle)
-        field('Corner', live!.cornerRadius, (v) => c.setLiveShape(livePath!, live.copyWith(cornerRadius: v.clamp(0, double.infinity))), width: 96),
+        field('Corner', live!.cornerRadius, (v) => c.setLiveShape(livePath!, live.copyWith(cornerRadius: v.clamp(0, double.infinity))), width: 96, key: 'corner'),
       if (live?.kind == LiveKind.polygon)
         number('Sides', live!.sides.toDouble(), (v) => c.setLiveShape(livePath!, live.copyWith(sides: v.round().clamp(3, 100)))),
       if (live?.kind == LiveKind.star) ...[
@@ -82,16 +98,34 @@ class _NumbersBarState extends State<NumbersBar> {
         Padding(
           padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
           child: Text(
-            live != null
-                ? '${_kindName(live.kind)} · keeps its dimensions'
-                : c.selection.length == 1
-                    ? 'Size of its outline'
-                    : '${c.selection.length} items · size of them together',
+            [
+              live != null
+                  ? '${_kindName(live.kind)} · keeps its dimensions'
+                  : c.selection.length == 1
+                      ? 'Size of its outline'
+                      : '${c.selection.length} items · size of them together',
+              if (single && c.selection.first.pin != null) _pinText(c.selection.first.pin!, lengths),
+            ].join(' · '),
             style: theme.textTheme.bodySmall,
           ),
         ),
       ]),
     );
+  }
+
+  /// E.g. "Pinned 37 mm from the left, centred top to bottom".
+  static String _pinText(Pin pin, LengthFormat lengths) {
+    String along(PinSide? side, double d, String start, String end) => switch (side) {
+          null => '',
+          PinSide.start => '${lengths.format(d)} from the $start',
+          PinSide.end => '${lengths.format(d)} from the $end',
+          PinSide.center => d.abs() < 1e-6 ? 'centred $start to $end' : '${lengths.format(d)} off centre $start to $end',
+        };
+    final parts = [
+      along(pin.horizontal, pin.dx, 'left', 'right'),
+      along(pin.vertical, pin.dy, 'top', 'bottom'),
+    ].where((p) => p.isNotEmpty);
+    return 'Pinned ${parts.join(', ')}';
   }
 
   static String _kindName(LiveKind k) => switch (k) {

@@ -9,6 +9,7 @@ import 'effects.dart';
 import 'geometry.dart';
 import 'image.dart';
 import 'live_shape.dart';
+import 'rules.dart';
 import 'style.dart';
 import 'text.dart';
 
@@ -16,6 +17,7 @@ export 'cut.dart';
 export 'effects.dart';
 export 'image.dart';
 export 'live_shape.dart';
+export 'rules.dart';
 export 'text.dart';
 
 /// Base class for everything that lives on a layer. Ported from WDElement.
@@ -28,6 +30,22 @@ abstract class InkElement {
   InkBlendMode blendMode;
 
   InkElement({this.opacity = 1, this.shadow, this.blendMode = InkBlendMode.normal});
+
+  /// Make mode: a name other shapes use to pin themselves to this one
+  /// (given when first needed).
+  String? id;
+
+  /// Make mode: sizes and positions typed with named measurements ('x',
+  /// 'y', 'w', 'h', 'corner'), so they follow when the measurements change.
+  Map<String, Formula> formulas = {};
+
+  /// Make mode: kept in place relative to another shape.
+  Pin? pin;
+
+  static int _ids = 0;
+
+  /// This element's [id], giving it one if it has none.
+  String get ensureId => id ??= '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}-${(_ids++).toRadixString(36)}';
 
   /// Geometric bounds, ignoring stroke width.
   Rect get bounds;
@@ -79,7 +97,17 @@ abstract class InkElement {
   /// The SVG for the element itself (no shadow or blend mode).
   String elementSvg(SvgWriter w);
 
-  InkElement clone() => InkElement.fromJson(toJson());
+  /// A copy: a separate shape, so it isn't pinned, and nothing is pinned
+  /// to it.
+  InkElement clone() => InkElement.fromJson(toJson())..forgetIdentity();
+
+  /// Drops ids and pins here and inside (for copies).
+  void forgetIdentity() {
+    for (final e in selfAndDescendants) {
+      e.id = null;
+      e.pin = null;
+    }
+  }
 
   /// This element, then everything inside it (group members, masked elements).
   Iterable<InkElement> get selfAndDescendants sync* {
@@ -112,12 +140,18 @@ abstract class InkElement {
         'opacity': opacity,
         if (shadow != null) 'shadow': shadow!.toJson(),
         if (blendMode != InkBlendMode.normal) 'blend': blendMode.name,
+        if (id != null) 'id': id,
+        if (formulas.isNotEmpty) 'formulas': {for (final f in formulas.entries) f.key: f.value.toJson()},
+        if (pin != null) 'pin': pin!.toJson(),
       };
 
   void readEffectsJson(Map<String, dynamic> j) {
     opacity = (j['opacity'] as num?)?.toDouble() ?? 1;
     shadow = j['shadow'] == null ? null : InkShadow.fromJson(j['shadow']);
     blendMode = InkBlendMode.values.asNameMap()[j['blend']] ?? InkBlendMode.normal;
+    id = j['id'] as String?;
+    formulas = {for (final f in ((j['formulas'] as Map?) ?? const {}).entries) f.key as String: Formula.fromJson(f.value)};
+    pin = j['pin'] == null ? null : Pin.fromJson(j['pin']);
   }
 }
 

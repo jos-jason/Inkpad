@@ -358,6 +358,298 @@ class DrawingController extends ChangeNotifier {
     setLiveShape(p, p.live!.rotatedTo(degrees));
   }
 
+  // ---- Named measurements and pins (Make mode) ------------------------------
+
+  /// Keeps pinned shapes in place relative to their targets after every
+  /// change.
+  @override
+  void notifyListeners() {
+    _applyPins();
+    super.notifyListeners();
+  }
+
+  Iterable<InkElement> get _everything sync* {
+    for (final e in drawing.allElements) {
+      yield* e.selfAndDescendants;
+    }
+  }
+
+  InkElement? elementWithId(String id) {
+    for (final e in _everything) {
+      if (e.id == id) return e;
+    }
+    return null;
+  }
+
+  /// [e]'s size or position [key] as the numbers bar shows it: 'x', 'y'
+  /// (its outline's top-left), 'w', 'h' (a live shape's own size) or
+  /// 'corner'; null when it has none.
+  static double? valueOf(InkElement e, String key) {
+    final live = e is InkPath ? e.live : null;
+    final b = e.bounds;
+    return switch (key) {
+      'x' => b.left,
+      'y' => b.top,
+      'w' => live?.width ?? b.width,
+      'h' => live != null ? (live.kind == LiveKind.line ? null : live.height) : b.height,
+      'corner' => live?.kind == LiveKind.rectangle ? live!.cornerRadius : null,
+      _ => null,
+    };
+  }
+
+  /// Sets [e]'s [key] (see [valueOf]) to [v].
+  static void _setValue(InkElement e, String key, double v) {
+    final b = e.bounds;
+    final live = e is InkPath ? e.live : null;
+    switch (key) {
+      case 'x':
+        e.transform(Affine.translation(v - b.left, 0));
+      case 'y':
+        e.transform(Affine.translation(0, v - b.top));
+      case 'w' || 'h':
+        if (v <= 0) return;
+        if (live != null) {
+          (e as InkPath).live = live.resized(w: key == 'w' ? v : null, h: key == 'h' ? v : null);
+        } else if (key == 'w' && b.width > 0) {
+          e.transform(Affine.scaleAbout(b.topLeft, v / b.width, 1));
+        } else if (key == 'h' && b.height > 0) {
+          e.transform(Affine.scaleAbout(b.topLeft, 1, v / b.height));
+        }
+      case 'corner':
+        if (live?.kind == LiveKind.rectangle) (e as InkPath).live = live!.copyWith(cornerRadius: math.max(v, 0));
+    }
+  }
+
+  /// The single selected element's formula for [key], while it still gives
+  /// the value shown.
+  Formula? formulaFor(String key) {
+    if (selection.length != 1) return null;
+    final e = selection.first;
+    final f = e.formulas[key];
+    final v = valueOf(e, key);
+    return f != null && v != null && f.matches(v) ? f : null;
+  }
+
+  /// Whether the single selected element is pinned along [key]'s direction
+  /// ('x' or 'y'), so its position there follows its pin.
+  bool pinnedAlong(String key) {
+    final pin = selection.length == 1 ? selection.first.pin : null;
+    return pin != null && (key == 'x' ? pin.horizontal != null : pin.vertical != null);
+  }
+
+  /// Sets the single selected element's [key] to [value], typed as [text]
+  /// using named measurements: it follows when they change.
+  void setFormula(String key, String text, double value) {
+    if (selection.length != 1) return;
+    final e = selection.first;
+    batch(() {
+      _setValue(e, key, value);
+      final now = valueOf(e, key);
+      if (now == null || pinnedAlong(key)) {
+        e.formulas.remove(key);
+        if (pinnedAlong(key)) showHint('This shape is pinned: change its pin\'s distance to keep it there.');
+      } else {
+        e.formulas[key] = Formula(text, drawing.lengths.unit, now);
+      }
+    });
+  }
+
+  /// Forgets the single selected element's formula for [key] (it was given
+  /// a plain value).
+  void clearFormula(String key) {
+    if (selection.length == 1) selection.first.formulas.remove(key);
+  }
+
+  /// Replaces the named measurements; shapes sized with them follow.
+  /// Renamed measurements ([renames]: old name → new) are renamed in the
+  /// formulas that use them.
+  void setVariables(List<MakeVariable> variables, {Map<String, String> renames = const {}}) {
+    batch(() {
+      if (renames.isNotEmpty) {
+        String rename(String text) {
+          for (final r in renames.entries) {
+            text = Formula.rename(text, r.key, r.value);
+          }
+          return text;
+        }
+
+        for (final e in _everything) {
+          e.formulas.updateAll((_, f) => Formula(rename(f.text), f.unit, f.value));
+          final pin = e.pin;
+          if (pin != null) {
+            if (pin.dxFormula != null) pin.dxFormula = Formula(rename(pin.dxFormula!.text), pin.dxFormula!.unit, pin.dxFormula!.value);
+            if (pin.dyFormula != null) pin.dyFormula = Formula(rename(pin.dyFormula!.text), pin.dyFormula!.unit, pin.dyFormula!.value);
+          }
+        }
+        for (final v in variables) {
+          v.expression = rename(v.expression);
+        }
+      }
+      drawing.variables
+        ..clear()
+        ..addAll(variables);
+      applyFormulas();
+    });
+  }
+
+  /// Works out every formula again (after the named measurements changed)
+  /// and resizes and moves shapes to match. Formulas that no longer match
+  /// their shape (it was changed by hand since) are forgotten; ones that
+  /// can't be worked out (a measurement was deleted) are left as they are.
+  void applyFormulas() {
+    final scope = VariableScope(drawing.variables);
+    final pinned = <InkElement>[];
+    for (final e in _everything.toList()) {
+      if (e.formulas.isNotEmpty) {
+        // Check them all before changing anything (a resize can move it).
+        final valid = <String, Formula>{};
+        for (final MapEntry(:key, value: f) in e.formulas.entries) {
+          final v = valueOf(e, key);
+          if (v != null && f.matches(v)) valid[key] = f;
+        }
+        e.formulas = valid;
+        for (final key in const ['w', 'h', 'corner', 'x', 'y']) {
+          final f = valid[key];
+          if (f == null || key == 'x' && e.pin?.horizontal != null || key == 'y' && e.pin?.vertical != null) continue;
+          final v = scope.evaluate(f);
+          if (v == null) continue;
+          _setValue(e, key, v);
+          e.formulas[key] = f.withValue(valueOf(e, key) ?? v);
+        }
+      }
+      final pin = e.pin;
+      if (pin != null) {
+        final fx = pin.dxFormula, fy = pin.dyFormula;
+        final vx = fx == null ? null : scope.evaluate(fx), vy = fy == null ? null : scope.evaluate(fy);
+        if (vx != null) {
+          pin.dx = vx;
+          pin.dxFormula = fx!.withValue(vx);
+        }
+        if (vy != null) {
+          pin.dy = vy;
+          pin.dyFormula = fy!.withValue(vy);
+        }
+        pinned.add(e);
+      }
+    }
+    for (final e in pinned) {
+      _enforcePin(e);
+    }
+  }
+
+  /// Moves [e] to its pin's distances from its target.
+  void _enforcePin(InkElement e) {
+    final pin = e.pin;
+    final t = pin == null ? null : elementWithId(pin.target);
+    if (pin == null || t == null) return;
+    final tb = t.bounds;
+    final c = pin.correction(e.bounds, tb);
+    if (c.distance > 1e-9) e.transform(Affine.translation(c.dx, c.dy));
+    pin.lastTarget = tb;
+  }
+
+  /// Pinned shapes follow their targets; shapes moved by hand take their
+  /// new distances.
+  void _applyPins() {
+    List<InkElement>? pinned;
+    Map<String, InkElement>? ids;
+    for (final e in _everything) {
+      if (e.pin != null) (pinned ??= []).add(e);
+      if (e.id != null) (ids ??= {})[e.id!] = e;
+    }
+    if (pinned == null) return;
+    // Pins on pins (a hole pinned to a shelf pinned to a side) settle in a
+    // few rounds.
+    for (var round = 0; round < 4; round++) {
+      var moved = false;
+      for (final e in pinned) {
+        final pin = e.pin;
+        if (pin == null) continue;
+        final t = ids?[pin.target];
+        if (t == null || identical(t, e) || t.selfAndDescendants.contains(e) || e.selfAndDescendants.contains(t)) {
+          e.pin = null; // its target was deleted
+          continue;
+        }
+        final tb = t.bounds, own = e.bounds;
+        if (pin.lastTarget == null || pin.lastTarget == tb) {
+          pin.adopt(own, tb);
+        } else {
+          final c = pin.correction(own, tb);
+          if (c.distance > 1e-9) {
+            e.transform(Affine.translation(c.dx, c.dy));
+            moved = true;
+          }
+        }
+        pin.lastTarget = tb;
+      }
+      if (!moved) break;
+    }
+  }
+
+  /// Make mode: two or more shapes selected, so the others can be pinned
+  /// to the largest.
+  bool get canPin => selection.length >= 2;
+
+  bool get selectionHasPins => selection.any((e) => e.pin != null);
+
+  /// The largest selected element (by its bounding box): what the others
+  /// are pinned to.
+  InkElement? get pinTarget {
+    InkElement? best;
+    var area = -1.0;
+    for (final e in orderedSelection) {
+      final b = e.bounds;
+      if (b.width * b.height > area) {
+        area = b.width * b.height;
+        best = e;
+      }
+    }
+    return best;
+  }
+
+  /// Pins the selection to its largest shape ([pinTarget]): [horizontal]
+  /// and [vertical] say which edge (or the centre) each keeps its distance
+  /// from. A given distance ([dx], [dy], typed as [dxText]/[dyText] when
+  /// they use named measurements) moves them there; otherwise each keeps
+  /// the distance it's at.
+  void pinSelection({PinSide? horizontal, PinSide? vertical, double? dx, double? dy, String? dxText, String? dyText}) {
+    final target = pinTarget;
+    if (target == null || selection.length < 2 || horizontal == null && vertical == null) return;
+    final unit = drawing.lengths.unit;
+    batch(() {
+      final tb = target.bounds;
+      for (final e in orderedSelection) {
+        if (identical(e, target)) continue;
+        // No loops: the target stops following this one.
+        if (target.pin?.target == e.id) target.pin = null;
+        final own = e.bounds;
+        final pin = Pin(target: target.ensureId, horizontal: horizontal, vertical: vertical)..adopt(own, tb);
+        if (horizontal != null && dx != null) {
+          pin.dx = dx;
+          if (dxText != null) pin.dxFormula = Formula(dxText, unit, dx);
+        }
+        if (vertical != null && dy != null) {
+          pin.dy = dy;
+          if (dyText != null) pin.dyFormula = Formula(dyText, unit, dy);
+        }
+        e.pin = pin;
+        // Position formulas along pinned directions give way to the pin.
+        if (horizontal != null) e.formulas.remove('x');
+        if (vertical != null) e.formulas.remove('y');
+        _enforcePin(e);
+      }
+    });
+  }
+
+  void unpinSelection() {
+    if (!selectionHasPins) return;
+    batch(() {
+      for (final e in selection) {
+        e.pin = null;
+      }
+    });
+  }
+
   /// Where the point being dragged snapped to, shown on the canvas.
   SnapResult? snapFeedback;
 
@@ -673,7 +965,7 @@ class DrawingController extends ChangeNotifier {
   void paste() {
     if (_clipboard.isEmpty) return;
     checkpoint();
-    final pasted = [for (final j in _clipboard) InkElement.fromJson(j)];
+    final pasted = [for (final j in _clipboard) InkElement.fromJson(j)..forgetIdentity()];
     drawing.activeLayer.elements.addAll(pasted);
     selection
       ..clear()

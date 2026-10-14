@@ -192,6 +192,17 @@ Done:
     pockets cleared in rings, depth passes, holding tabs on through-cuts,
     conventional or climb milling, pockets and holes before parts; a
     preview to play the job through, with cut length and time.
+  - Measurements (Path → Measurements…, or Settings): named sizes such as
+    `thickness = 12` or `inner = width - 2*thickness` (lengths, or plain
+    numbers for counts). Any size box takes them by name
+    (`width/2 - thickness`, `2 thickness + 3mm`); sizes and positions typed
+    that way are kept as formulas (marked ƒ), so shapes follow when a
+    measurement changes. Renaming one renames it everywhere.
+  - Arrange → Pin to Shape…: keeps the selected shapes in place on the
+    largest one (a distance from its left/right/top/bottom edge, or
+    centred), so holes and slots follow a panel when it's moved or resized.
+    Moving a pinned shape by hand sets its new distance; distances can use
+    measurements.
 - AI (the ✨ button), with your own account: Claude (Anthropic), any
   OpenAI-compatible service (OpenAI, OpenRouter, Groq, LM Studio, Gemini's
   compatible endpoint…), or Ollama on your computer or network. Set it up

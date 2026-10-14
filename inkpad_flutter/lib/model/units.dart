@@ -1,5 +1,9 @@
 import 'dart:math' as math;
 
+/// Looks up a named measurement: its value (points for a length, the plain
+/// number otherwise), or null if there's no such name.
+typedef VariableLookup = ({double value, bool length})? Function(String name);
+
 /// Reading and writing physical lengths. Drawings are stored in points
 /// (1/72 inch, as in Inkpad); this shows and accepts millimetres (with
 /// fractions of a millimetre), centimetres, inches (decimal or fractional,
@@ -17,7 +21,10 @@ class LengthFormat {
   /// Decimal places for other units (mm: 2 shows 0.05 mm).
   final int decimals;
 
-  const LengthFormat({this.unit = 'mm', this.fractions = false, this.denominator = 32, this.decimals = 2});
+  /// Named measurements that typed sums can use.
+  final VariableLookup? variables;
+
+  const LengthFormat({this.unit = 'mm', this.fractions = false, this.denominator = 32, this.decimals = 2, this.variables});
 
   static const pointsPer = {
     'mm': 72 / 25.4,
@@ -66,10 +73,21 @@ class LengthFormat {
   /// A length typed by the user, in points; null if it can't be read.
   /// Plain numbers are in this unit; others can be given ("25.4mm", "1in",
   /// 3/8", 1 3/8", 1-3/8", 2' 6"). Simple sums work: "300-2*12",
-  /// "(600 - 18) / 2".
+  /// "(600 - 18) / 2". Named measurements can be used by name
+  /// ("width/2 - thickness", "2 thickness").
   double? parse(String text) {
-    final v = _Expression(text, unit).evaluate();
+    final v = _Expression(text, unit, variables).evaluate();
     return v == null || !v.isFinite ? null : v * pointsPerUnit;
+  }
+
+  /// The names [text] uses (lowercased), or empty when it uses none.
+  static Set<String> namesIn(String text) {
+    final names = <String>{};
+    _Expression._tokenizeOrNull(text, 'pt', (n) {
+      names.add(n);
+      return (value: 1, length: false);
+    });
+    return names;
   }
 }
 
@@ -79,7 +97,7 @@ class _Expression {
   final List<_Token> _tokens;
   int _i = 0;
 
-  _Expression(String text, this.unit) : _tokens = _tokenize(text, unit);
+  _Expression(String text, this.unit, [VariableLookup? variables]) : _tokens = _tokenize(text, unit, variables);
 
   static const _suffixes = {
     'mm': 'mm', 'cm': 'cm', 'm': 'm', 'in': 'in', '"': 'in', '″': 'in', 'inch': 'in', 'inches': 'in',
@@ -91,13 +109,14 @@ class _Expression {
     return pts / (LengthFormat.pointsPer[into] ?? 1);
   }
 
-  static List<_Token>? _tokenizeOrNull(String text, String unit) {
+  static List<_Token>? _tokenizeOrNull(String text, String unit, VariableLookup? variables) {
     final s = text.trim().toLowerCase().replaceAll(',', '.');
     final tokens = <_Token>[];
     var i = 0;
     // A number, a mixed number (1 3/8, 1-3/8) or a fraction (3/8).
     final numberRe = RegExp(r'(\d+(?:\.\d*)?|\.\d+)(?:(?:\s+|-)(\d+)/(\d+)|/(\d+))?');
-    final suffixRe = RegExp(r'\s*(inches|inch|feet|foot|mm|cm|in|ft|pt|px|m(?![a-z])|"|″|' "'" r'|′)');
+    final suffixRe = RegExp(r'\s*(?:(inches|inch|feet|foot|mm|cm|in|ft|pt|px|m)(?![a-z0-9_])|("|″|' "'" r'|′))');
+    final nameRe = RegExp(r'[a-z_][a-z0-9_]*');
     while (i < s.length) {
       final ch = s[i];
       if (ch == ' ' || ch == '\t') {
@@ -107,6 +126,18 @@ class _Expression {
       if ('+-*/×÷()'.contains(ch)) {
         tokens.add(_Token.op(switch (ch) { '×' => '*', '÷' => '/', _ => ch }));
         i++;
+        continue;
+      }
+      final name = nameRe.matchAsPrefix(s, i);
+      if (name != null) {
+        final found = variables?.call(name.group(0)!);
+        if (found == null) return null;
+        i = name.end;
+        // "2 thickness" multiplies.
+        if (tokens.isNotEmpty && (tokens.last.isNumber || tokens.last.op == ')')) tokens.add(const _Token.op('*'));
+        tokens.add(found.length
+            ? _Token.number(found.value / (LengthFormat.pointsPer[unit] ?? 1), hasUnit: true, named: true)
+            : _Token.number(found.value, named: true));
         continue;
       }
       final m = numberRe.matchAsPrefix(s, i);
@@ -126,18 +157,19 @@ class _Expression {
       final sm = suffixRe.matchAsPrefix(s, i);
       var hasUnit = false;
       if (sm != null) {
-        value *= _unitValue(_suffixes[sm.group(1)!]!, unit);
+        value *= _unitValue(_suffixes[sm.group(1) ?? sm.group(2)!]!, unit);
         i = sm.end;
         hasUnit = true;
       }
       // 2' 6": lengths side by side add up.
-      if (tokens.isNotEmpty && tokens.last.isNumber && tokens.last.hasUnit && hasUnit) tokens.add(const _Token.op('+'));
+      if (tokens.isNotEmpty && tokens.last.isNumber && !tokens.last.named && tokens.last.hasUnit && hasUnit) tokens.add(const _Token.op('+'));
       tokens.add(_Token.number(value, hasUnit: hasUnit));
     }
     return tokens;
   }
 
-  static List<_Token> _tokenize(String text, String unit) => _tokenizeOrNull(text, unit) ?? const [_Token.op('?')];
+  static List<_Token> _tokenize(String text, String unit, VariableLookup? variables) =>
+      _tokenizeOrNull(text, unit, variables) ?? const [_Token.op('?')];
 
   double? evaluate() {
     if (_tokens.isEmpty) return null;
@@ -200,10 +232,14 @@ class _Token {
   final double value;
   final bool hasUnit;
 
+  /// A named measurement's value.
+  final bool named;
+
   const _Token.op(this.op)
       : value = 0,
-        hasUnit = false;
-  const _Token.number(this.value, {this.hasUnit = false}) : op = null;
+        hasUnit = false,
+        named = false;
+  const _Token.number(this.value, {this.hasUnit = false, this.named = false}) : op = null;
 
   bool get isNumber => op == null;
 }

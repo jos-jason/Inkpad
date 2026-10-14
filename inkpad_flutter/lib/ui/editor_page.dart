@@ -17,6 +17,7 @@ import 'make/cut_panel.dart';
 import 'make/dimension_overlay.dart';
 import 'make/gcode_dialog.dart';
 import 'make/make_dialogs.dart';
+import 'make/rules_dialogs.dart';
 import 'make/numbers_bar.dart';
 import 'chrome/color_editor.dart';
 import 'chrome/rulers.dart';
@@ -334,6 +335,11 @@ class _EditorPageState extends State<EditorPage> {
       align('Align Top', AlignEdge.top, Icons.align_vertical_top),
       align('Align Middle', AlignEdge.middle, Icons.align_vertical_center),
       align('Align Bottom', AlignEdge.bottom, Icons.align_vertical_bottom),
+      if (c.drawing.makeMode) ...[
+        const MenuDivider(),
+        MenuAction('Pin to Shape…', c.canPin ? () => showPinDialog(context, c) : null),
+        MenuAction('Unpin', c.selectionHasPins ? c.unpinSelection : null),
+      ],
     ];
   }
 
@@ -350,6 +356,7 @@ class _EditorPageState extends State<EditorPage> {
         MenuAction('Add Dogbones', c.canAddDogbones ? c.addDogbones : null),
         MenuAction('Add T-bones', c.canAddDogbones ? () => c.addDogbones(tBone: true) : null),
         MenuAction('Box Maker…', () => showBoxMakerDialog(context, c)),
+        MenuAction('Measurements…', () => showMeasurementsDialog(context, c)),
       ],
       const MenuDivider(),
       MenuAction('Add Anchor Points', c.canAddAnchors ? c.addAnchorPoints : null),
