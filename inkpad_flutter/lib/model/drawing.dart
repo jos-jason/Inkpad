@@ -3,12 +3,14 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'cam.dart';
+import 'constraints.dart';
 import 'element.dart';
 import 'geometry.dart';
 import 'style.dart';
 import 'units.dart';
 
 export 'cam.dart';
+export 'constraints.dart';
 export 'rules.dart';
 export 'units.dart';
 
@@ -116,6 +118,9 @@ class InkDrawing {
   /// Named measurements (thickness, width, …) that sizes can be typed with.
   final List<MakeVariable> variables;
 
+  /// Sketch constraints between shapes (coincident, parallel, dimensions, …).
+  final List<SketchConstraint> constraints;
+
   /// Inches shown as fractions (1 3/8") to the nearest 1/[inchDenominator];
   /// other units with [decimals] places.
   bool fractionalInches;
@@ -145,6 +150,7 @@ class InkDrawing {
     this.showCutPreview = false,
     CamSettings? cam,
     List<MakeVariable>? variables,
+    List<SketchConstraint>? constraints,
     this.fractionalInches = true,
     this.inchDenominator = 32,
     this.decimals = 2,
@@ -153,6 +159,7 @@ class InkDrawing {
     this.defaultCutDepth = 6 * 72 / 25.4,
   })  : cam = cam ?? CamSettings(),
         variables = variables ?? [],
+        constraints = constraints ?? [],
         layers = layers ?? [InkLayer(name: 'Layer 1')];
 
   Rect get bounds => Rect.fromLTWH(0, 0, width, height);
@@ -265,6 +272,7 @@ class InkDrawing {
         if (showCutPreview) 'cutPreview': true,
         'cam': cam.toJson(),
         if (variables.isNotEmpty) 'variables': [for (final v in variables) v.toJson()],
+        if (constraints.isNotEmpty) 'constraints': [for (final c in constraints) c.toJson()],
         'lengths': {'fractions': fractionalInches, 'denominator': inchDenominator, 'decimals': decimals},
         'material': {'thickness': materialThickness, 'bit': bitDiameter, 'depth': defaultCutDepth},
         'layers': layers.map((l) => l.toJson()).toList(),
@@ -292,6 +300,7 @@ class InkDrawing {
       showCutPreview: j['cutPreview'] as bool? ?? false,
       cam: j['cam'] == null ? null : CamSettings.fromJson(j['cam']),
       variables: [for (final v in (j['variables'] as List?) ?? const []) MakeVariable.fromJson(v)],
+      constraints: [for (final c in (j['constraints'] as List?) ?? const []) SketchConstraint.fromJson(c)],
       fractionalInches: j['lengths']?['fractions'] as bool? ?? true,
       inchDenominator: j['lengths']?['denominator'] as int? ?? 32,
       decimals: j['lengths']?['decimals'] as int? ?? 2,

@@ -206,6 +206,17 @@ Done:
     centred), so holes and slots follow a panel when it's moved or resized.
     Moving a pinned shape by hand sets its new distance; distances can use
     measurements.
+  - Constraints tool (D), a CAD-style sketch solver: coincident (and point
+    on line or circle), horizontal, vertical, parallel, perpendicular,
+    collinear, equal, tangent, concentric, midpoint, symmetric and fix, on
+    shapes' corners, centres, edges and circles; dimensions (length,
+    distance, across, up/down, angle, radius, diameter) that drive the
+    geometry, typed as numbers or with measurements, or kept as references.
+    Shapes being dragged or resized stay where you put them and the rest
+    follow; conflicting or redundant constraints are refused. While the
+    tool is on, fully constrained shapes show green and the bar counts the
+    degrees of freedom left. Click a mark to pick it (Delete removes it);
+    double-click a dimension to change it.
 - AI (the ✨ button), with your own account: Claude (Anthropic), any
   OpenAI-compatible service (OpenAI, OpenRouter, Groq, LM Studio, Gemini's
   compatible endpoint…), or Ollama on your computer or network. Set it up
@@ -247,7 +258,7 @@ To port next (roughly in priority order; greyed out in the UI):
 ## Keyboard shortcuts
 
 V select · A direct select · O rotate · K scale · P pen · N add/delete point ·
-C scissors · B brush · F freehand · Shift+E eraser · I eyedropper · T text · M measure · J joinery · R rect · E oval · S star · G polygon · L line · H hand ·
+C scissors · B brush · F freehand · Shift+E eraser · I eyedropper · T text · M measure · J joinery · D constraints · R rect · E oval · S star · G polygon · L line · H hand ·
 Ctrl/Cmd+Z undo · Shift+Ctrl/Cmd+Z redo · Ctrl/Cmd+D duplicate ·
 Ctrl/Cmd+G group · Shift+Ctrl/Cmd+G ungroup · Ctrl/Cmd+S save now ·
 Ctrl/Cmd+E export SVG · Ctrl/Cmd+7 make clipping mask ·

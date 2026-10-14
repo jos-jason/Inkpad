@@ -18,6 +18,8 @@ import 'make/dimension_overlay.dart';
 import 'make/gcode_dialog.dart';
 import 'make/make_dialogs.dart';
 import 'make/rules_dialogs.dart';
+import 'make/constraint_bar.dart';
+import 'make/dimension_dialog.dart';
 import 'make/numbers_bar.dart';
 import 'chrome/color_editor.dart';
 import 'chrome/rulers.dart';
@@ -82,6 +84,7 @@ class _EditorPageState extends State<EditorPage> {
   final _text = TextTool();
   final _measure = MeasureTool();
   final _joinery = JoineryTool();
+  final _constraints = ConstraintTool();
   final _hand = HandTool();
 
   late final _shapes = PaletteGroup([
@@ -112,6 +115,7 @@ class _EditorPageState extends State<EditorPage> {
     PaletteTool('Eyedropper', const Icon(Icons.colorize), _eyedropper, shortcut: 'I'),
     PaletteTool('Measure', const Icon(Icons.straighten), _measure, shortcut: 'M'),
     PaletteTool('Joinery', const Icon(Icons.extension_outlined), _joinery, shortcut: 'J'),
+    PaletteTool('Constraints', const Icon(Icons.architecture), _constraints, shortcut: 'D'),
     PaletteTool('Scale', const ToolIcon(ToolIcon.scale), _scale, shortcut: 'K'),
     PaletteTool('Rotate', const ToolIcon(ToolIcon.rotate), _rotate, shortcut: 'O'),
   ];
@@ -127,6 +131,31 @@ class _EditorPageState extends State<EditorPage> {
     if (target == null || !mounted) return;
     controller.jointRequest.value = null;
     showJointDialog(context, controller, target);
+  }
+
+  /// Delete: the picked constraint in the Constraints tool, otherwise the
+  /// selection.
+  void _delete() {
+    final k = controller.selectedConstraint;
+    if (controller.tool is ConstraintTool && k != null) {
+      controller.deleteConstraint(k);
+    } else {
+      controller.deleteSelection();
+    }
+  }
+
+  void _askDimension() {
+    final refs = controller.dimensionRequest.value;
+    if (refs == null || !mounted) return;
+    controller.dimensionRequest.value = null;
+    showDimensionDialog(context, controller, refs);
+  }
+
+  void _editDimension() {
+    final k = controller.dimensionEdit.value;
+    if (k == null || !mounted) return;
+    controller.dimensionEdit.value = null;
+    showDimensionEditDialog(context, controller, k);
   }
 
   void _showHint() {
@@ -155,6 +184,8 @@ class _EditorPageState extends State<EditorPage> {
     controller.addListener(_onEditingChanged);
     controller.hint.addListener(_showHint);
     controller.jointRequest.addListener(_askJoint);
+    controller.dimensionRequest.addListener(_askDimension);
+    controller.dimensionEdit.addListener(_editDimension);
     _lifecycle = AppLifecycleListener(onHide: _saveNow, onPause: _saveNow);
   }
 
@@ -228,9 +259,11 @@ class _EditorPageState extends State<EditorPage> {
     // Typing text: letters are text, not tool shortcuts.
     if (c.editingText != null) return const {};
     final map = <ShortcutActivator, VoidCallback>{
-      const SingleActivator(LogicalKeyboardKey.delete): c.deleteSelection,
-      const SingleActivator(LogicalKeyboardKey.backspace): c.deleteSelection,
+      const SingleActivator(LogicalKeyboardKey.delete): _delete,
+      const SingleActivator(LogicalKeyboardKey.backspace): _delete,
       const SingleActivator(LogicalKeyboardKey.escape): () {
+        _constraints.picks.clear();
+        c.selectedConstraint = null;
         c.finishActivePath();
         c.selectNone();
       },
@@ -243,6 +276,7 @@ class _EditorPageState extends State<EditorPage> {
     final shortcutTools = <String, Tool>{
       'V': _select, 'A': _direct, 'P': _pen, 'N': _anchor, 'R': _rect, 'E': _oval, 'S': _star, 'G': _polygon, 'L': _line,
       'K': _scale, 'O': _rotate, 'H': _hand, 'C': _scissors, 'B': _brush, 'F': _freehand, 'I': _eyedropper, 'T': _text, 'M': _measure, 'J': _joinery,
+      'D': _constraints,
     };
     map[const SingleActivator(LogicalKeyboardKey.keyE, shift: true)] = () => _setTool(_eraser);
     for (final MapEntry(key: letter, value: tool) in shortcutTools.entries) {
@@ -339,6 +373,7 @@ class _EditorPageState extends State<EditorPage> {
         const MenuDivider(),
         MenuAction('Pin to Shape…', c.canPin ? () => showPinDialog(context, c) : null),
         MenuAction('Unpin', c.selectionHasPins ? c.unpinSelection : null),
+        MenuAction('Remove Constraints', c.selectionHasConstraints ? c.removeConstraintsOnSelection : null),
       ],
     ];
   }
@@ -733,6 +768,7 @@ class _EditorPageState extends State<EditorPage> {
   Widget _toolOptions() {
     final t = controller.tool;
     void update(void Function() change) => setState(change);
+    if (t is ConstraintTool) return ConstraintBar(controller: controller, tool: t);
     if (t is EraserTool) {
       return _optionsPanel([
         SteppedSlider(

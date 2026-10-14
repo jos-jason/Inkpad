@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../geometry/make_ops.dart';
 import '../geometry/pathfinder.dart';
+import '../geometry/sketch_solver.dart';
 import '../model/bezier_node.dart';
 import '../model/drawing.dart';
 import '../model/element.dart';
@@ -15,6 +16,7 @@ import '../tools/tool.dart';
 import 'snapping.dart';
 
 export 'snapping.dart';
+export '../geometry/sketch_solver.dart' show SketchGeometry, SolveResult;
 
 /// Ported from WDAlignment.
 enum AlignEdge { left, center, right, top, middle, bottom }
@@ -365,6 +367,7 @@ class DrawingController extends ChangeNotifier {
   @override
   void notifyListeners() {
     _applyPins();
+    _solveSketch();
     super.notifyListeners();
   }
 
@@ -484,6 +487,9 @@ class DrawingController extends ChangeNotifier {
         for (final v in variables) {
           v.expression = rename(v.expression);
         }
+        for (final c in drawing.constraints) {
+          if (c.formula != null) c.formula = Formula(rename(c.formula!.text), c.formula!.unit, c.formula!.value);
+        }
       }
       drawing.variables
         ..clear()
@@ -534,6 +540,14 @@ class DrawingController extends ChangeNotifier {
     }
     for (final e in pinned) {
       _enforcePin(e);
+    }
+    for (final c in drawing.constraints) {
+      final f = c.formula;
+      final v = f == null ? null : scope.evaluate(f);
+      if (v != null) {
+        c.value = v;
+        c.formula = f!.withValue(v);
+      }
     }
   }
 
@@ -650,6 +664,216 @@ class DrawingController extends ChangeNotifier {
     });
   }
 
+  // ---- Sketch constraints (Make mode) -------------------------------------------
+
+  /// True when the constraints couldn't all be met after the last change.
+  bool sketchConflict = false;
+
+  /// The constraint picked in the Constraints tool (Delete removes it).
+  SketchConstraint? selectedConstraint;
+
+  /// Set by the Constraints tool when a dimension's items are picked: the
+  /// editor then asks for its value.
+  final dimensionRequest = ValueNotifier<List<GeoRef>?>(null);
+
+  /// Set when a dimension is double-clicked: the editor asks for its new
+  /// value.
+  final dimensionEdit = ValueNotifier<SketchConstraint?>(null);
+
+  Map<String, InkElement> get _byId => {
+        for (final e in _everything)
+          if (e.id != null) e.id!: e,
+      };
+
+  SketchSolver _sketchSolver() => SketchSolver(drawing.constraints, _byId);
+
+  ({int free, Set<String> fixed})? _sketchInfo;
+
+  /// Degrees of freedom left, and the shapes that can't move (when there
+  /// are constraints).
+  ({int free, Set<String> fixed})? get sketchInfo {
+    if (drawing.constraints.isEmpty) return null;
+    return _sketchInfo ??= _sketchSolver().analyse();
+  }
+
+  /// The ids of the selected shapes (and inside them).
+  Set<String> get _selectedIds => {
+        for (final e in selection)
+          for (final d in e.selfAndDescendants)
+            if (d.id != null) d.id!,
+      };
+
+  /// Meets the constraints after a change, moving the selection (what's
+  /// being edited) as little as possible.
+  void _solveSketch() {
+    _sketchInfo = null;
+    if (drawing.constraints.isEmpty) {
+      sketchConflict = false;
+      return;
+    }
+    final s = _sketchSolver();
+    // Constraints on deleted shapes or parts go.
+    if (s.invalid.isNotEmpty) {
+      drawing.constraints.removeWhere(s.invalid.contains);
+      if (selectedConstraint != null && s.invalid.contains(selectedConstraint)) selectedConstraint = null;
+    }
+    sketchConflict = !s.solve(held: _selectedIds).ok;
+    // Reference dimensions show the measurement as it is now.
+    for (final k in s.constraints) {
+      if (k.reference) k.value = s.measure(k) ?? k.value;
+    }
+  }
+
+  /// The geometry of [r] now (null if its shape or part is gone).
+  SketchGeometry geometryOf(String id) {
+    final e = _byId[id];
+    return e == null ? SketchGeometry.empty : SketchGeometry.of(e);
+  }
+
+  /// Adds [c] between the picked items, then meets it (moving the shape
+  /// picked first). Returns why it can't be added, or null. A dimension
+  /// that would over-constrain the sketch is kept as a reference that only
+  /// shows the measurement.
+  String? addConstraint(SketchConstraint c) {
+    checkpoint();
+    _batchDepth++;
+    String? problem;
+    try {
+      drawing.constraints.add(c);
+      final s = _sketchSolver();
+      if (!s.constraints.contains(c)) {
+        problem = "That constraint doesn't fit those items.";
+      } else if (s.isRedundant(c)) {
+        if (c.type.isDimension) {
+          c.reference = true;
+          c.value = s.measure(c) ?? c.value;
+          showHint('Shown as a reference: the other constraints already set it.');
+        } else {
+          problem = 'Already settled by other constraints.';
+        }
+      }
+      if (problem == null) {
+        // The shape picked last stays put if it can.
+        final r = s.solve(held: {c.refs.last.element});
+        if (!r.ok) problem = "Those constraints can't all be met.";
+      }
+    } finally {
+      _batchDepth--;
+    }
+    if (problem != null) {
+      // Nothing else changed (the solver only writes when it succeeds).
+      drawing.constraints.remove(c);
+      _dropCheckpoint();
+      showHint(problem);
+      return problem;
+    }
+    selectedConstraint = c;
+    notifyListeners();
+    return null;
+  }
+
+  /// Makes a [type] constraint between [refs] (picked on the canvas) and
+  /// adds it; returns why it can't be, or null. Fixed items are held where
+  /// they are now; tangent circles stay inside or outside each other as
+  /// they are; dimensions keep the side they're measured to.
+  String? constrain(ConstraintType type, List<GeoRef> refs, {double? value, String? formulaText, bool reference = false}) {
+    final k = SketchConstraint(type, refs, reference: reference);
+    if (type == ConstraintType.fix) {
+      final r = refs.single;
+      final geo = geometryOf(r.element);
+      final List<double>? at = switch (r.kind) {
+        GeoKind.point => geo.point(r.index) == null ? null : [geo.point(r.index)!.dx, geo.point(r.index)!.dy],
+        GeoKind.line => geo.line(r.index) == null
+            ? null
+            : [geo.line(r.index)!.$1.dx, geo.line(r.index)!.$1.dy, geo.line(r.index)!.$2.dx, geo.line(r.index)!.$2.dy],
+        GeoKind.circle => geo.circle(r.index) == null ? null : [geo.circle(r.index)!.$1.dx, geo.circle(r.index)!.$1.dy, geo.circle(r.index)!.$2],
+      };
+      if (at == null) return 'Nothing there to fix.';
+      k.fixed = at;
+    }
+    if (type == ConstraintType.tangent && refs.every((r) => r.kind == GeoKind.circle)) {
+      final a = geometryOf(refs[0].element).circle(refs[0].index), b = geometryOf(refs[1].element).circle(refs[1].index);
+      if (a != null && b != null && (a.$1 - b.$1).distance < (a.$2 - b.$2).abs() + 1e-9) k.sign = -1;
+    }
+    if (type == ConstraintType.horizontalDistance || type == ConstraintType.verticalDistance || type == ConstraintType.angle) {
+      final now = measureConstraint(k);
+      if (now != null && now < 0) k.sign = -1;
+    }
+    if (type.isDimension) {
+      k.value = value ?? measureConstraint(k) ?? 0;
+      if (formulaText != null) k.formula = Formula(formulaText, drawing.lengths.unit, k.value);
+    }
+    return addConstraint(k);
+  }
+
+  /// A new value for dimension [c] (with its formula when typed with
+  /// named measurements). Returns false (changing nothing) if the
+  /// constraints can't all be met.
+  bool setConstraintValue(SketchConstraint c, double value, {String? formulaText}) {
+    if (!drawing.constraints.contains(c)) return false;
+    checkpoint();
+    final old = (c.value, c.formula);
+    c.value = value;
+    c.formula = formulaText == null ? null : Formula(formulaText, drawing.lengths.unit, value);
+    final r = _sketchSolver().solve();
+    if (!r.ok && !c.reference) {
+      c
+        ..value = old.$1
+        ..formula = old.$2;
+      _dropCheckpoint();
+      showHint("Those constraints can't all be met.");
+      return false;
+    }
+    notifyListeners();
+    return true;
+  }
+
+  /// Makes dimension [c] drive the geometry, or only show it.
+  void setConstraintReference(SketchConstraint c, bool reference) {
+    if (c.reference == reference) return;
+    if (!reference) {
+      checkpoint();
+      c.reference = false;
+      final s = _sketchSolver();
+      if (s.isRedundant(c) || !s.solve().ok) {
+        c.reference = true;
+        _dropCheckpoint();
+        showHint('It would over-constrain the sketch.');
+        return;
+      }
+    } else {
+      checkpoint();
+      c.reference = true;
+    }
+    notifyListeners();
+  }
+
+  void deleteConstraint(SketchConstraint c) {
+    if (!drawing.constraints.contains(c)) return;
+    checkpoint();
+    drawing.constraints.remove(c);
+    if (identical(selectedConstraint, c)) selectedConstraint = null;
+    notifyListeners();
+  }
+
+  /// A dimension's measurement as the shapes are now.
+  double? measureConstraint(SketchConstraint c) => SketchSolver([c], _byId).measure(c);
+
+  /// Removes every constraint on the selected shapes.
+  void removeConstraintsOnSelection() {
+    final ids = _selectedIds;
+    if (!drawing.constraints.any((c) => c.elements.any(ids.contains))) return;
+    checkpoint();
+    drawing.constraints.removeWhere((c) => c.elements.any(ids.contains));
+    selectedConstraint = null;
+    notifyListeners();
+  }
+
+  bool get selectionHasConstraints {
+    final ids = _selectedIds;
+    return drawing.constraints.any((c) => c.elements.any(ids.contains));
+  }
+
   // ---- Canvas size ------------------------------------------------------------
 
   /// Makes the page [width] × [height] (points). [anchor] says which part of
@@ -727,6 +951,12 @@ class DrawingController extends ChangeNotifier {
       _batchDepth--;
       notifyListeners();
     }
+  }
+
+  /// Forgets the last undo step without changing the drawing (it turned out
+  /// to change nothing).
+  void _dropCheckpoint() {
+    if (_batchDepth == 0 && _undoStack.isNotEmpty) _undoStack.removeLast();
   }
 
   /// Puts the drawing back as it was before the last undo step, and forgets

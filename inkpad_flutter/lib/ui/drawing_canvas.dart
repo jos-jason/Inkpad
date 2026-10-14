@@ -10,6 +10,7 @@ import '../model/element.dart';
 import '../model/style.dart';
 import '../text/font_library.dart';
 import 'make/cut_preview.dart';
+import 'make/constraint_painter.dart';
 import '../tools/tool.dart';
 
 /// Where the canvas is looking: screen = doc * scale + offset. Shared with
@@ -336,6 +337,7 @@ class _CanvasPainter extends CustomPainter {
     if (drawing.showGrid) _paintGrid(canvas, visible);
     drawing.render(canvas, visible);
     if (drawing.makeMode && drawing.showCutPreview) CutPreview.paint(canvas, drawing);
+    ConstraintPainter.paint(canvas, controller, scale);
 
     _paintSelection(canvas);
     controller.tool.paintOverlay(canvas, controller, scale);
