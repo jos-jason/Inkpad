@@ -254,6 +254,25 @@ class _EditorPageState extends State<EditorPage> {
     controller.tool = t;
   }
 
+  /// Whether the keyboard is typing into a text box (a size, a name, …):
+  /// then keys are for the box, not shortcuts.
+  static bool get _typingInField {
+    final context = FocusManager.instance.primaryFocus?.context;
+    if (context == null) return false;
+    return context.widget is EditableText || context.findAncestorWidgetOfExactType<EditableText>() != null;
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent || _typingInField) return KeyEventResult.ignored;
+    for (final MapEntry(key: activator, value: callback) in _shortcuts.entries) {
+      if (activator.accepts(event, HardwareKeyboard.instance)) {
+        callback();
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
   Map<ShortcutActivator, VoidCallback> get _shortcuts {
     final c = controller;
     // Typing text: letters are text, not tool shortcuts.
@@ -469,8 +488,8 @@ class _EditorPageState extends State<EditorPage> {
           view: view,
           fitPadding: EdgeInsets.fromLTRB(compact ? 70 : 80, 60 + padding.top, 12, 76 + padding.bottom),
         );
-        return CallbackShortcuts(
-          bindings: _shortcuts,
+        return Focus(
+          onKeyEvent: _onKey,
           child: Focus(
             focusNode: _keys,
             autofocus: true,
