@@ -6,6 +6,7 @@ import 'package:inkpad/library/library_controller.dart';
 import 'package:inkpad/main.dart';
 import 'package:inkpad/model/drawing.dart';
 import 'package:inkpad/model/element.dart';
+import 'package:inkpad/ui/chrome/chrome.dart';
 
 import 'helpers/test_fonts.dart';
 
@@ -46,4 +47,46 @@ void main() {
     await tester.pump();
     expect(find.widgetWithText(TextField, 'W'), findsOneWidget); // still selected: nothing deleted
   });
+
+  for (final phone in [true, false]) {
+    testWidgets('panels stay above the keyboard and it can be put away (${phone ? 'phone' : 'iPad'})', (tester) async {
+      tester.view.physicalSize = phone ? const Size(430, 932) : const Size(1024, 1366);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final field = FocusNode();
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showPopover<void>(
+                  anchor: context,
+                  builder: (_) => Column(mainAxisSize: MainAxisSize.min, children: [
+                    const SizedBox(height: 200, child: Text('Describe what to draw')),
+                    TextField(focusNode: field, autofocus: true, onTapOutside: (_) => field.unfocus()),
+                    TextButton(onPressed: () {}, child: const Text('Draw')),
+                  ]),
+                ),
+                child: const Text('AI'),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('AI'));
+      await tester.pumpAndSettle();
+      // The keyboard comes up over the bottom 340 pixels.
+      tester.view.viewInsets = const FakeViewPadding(bottom: 340);
+      await tester.pumpAndSettle();
+      final screen = tester.view.physicalSize.height;
+      expect(tester.getRect(find.byType(TextField)).bottom, lessThanOrEqualTo(screen - 340));
+      expect(tester.getRect(find.text('Draw')).bottom, lessThanOrEqualTo(screen - 340));
+      expect(field.hasFocus, isTrue);
+      // Tapping outside the text box puts the keyboard away.
+      await tester.tap(find.text('Describe what to draw'));
+      await tester.pump();
+      expect(field.hasFocus, isFalse);
+    });
+  }
 }

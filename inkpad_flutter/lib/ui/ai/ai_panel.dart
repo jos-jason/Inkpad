@@ -239,6 +239,8 @@ class _AiPanelState extends State<AiPanel> {
             focusNode: _focus,
             autofocus: true,
             enabled: !working,
+            // Tapping elsewhere puts the keyboard away (phones have no key for it).
+            onTapOutside: (_) => _focus.unfocus(),
             minLines: 2,
             maxLines: 5,
             textInputAction: TextInputAction.newline,

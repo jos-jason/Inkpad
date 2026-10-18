@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// Below this width the editor uses its compact (phone) layout.
@@ -70,7 +72,21 @@ Future<T?> showPopover<T>({
       isScrollControlled: true,
       showDragHandle: true,
       constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(anchor).height * 0.85),
-      builder: (context) => SafeArea(child: SingleChildScrollView(child: builder(context))),
+      // Above the keyboard when it's up; dragging the sheet's content or
+      // tapping outside a text box puts the keyboard away.
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+        child: SafeArea(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              child: builder(context),
+            ),
+          ),
+        ),
+      ),
     );
   }
   final box = anchor.findRenderObject() as RenderBox;
@@ -87,6 +103,8 @@ Future<T?> showPopover<T>({
     ),
     pageBuilder: (context, _, _) {
       final screen = MediaQuery.sizeOf(context);
+      // The on-screen keyboard (iPad): popovers stay above it.
+      final keyboard = MediaQuery.viewInsetsOf(context).bottom;
       const margin = 12.0;
       final w = width.clamp(0.0, screen.width - margin * 2);
       double left, top, maxHeight;
@@ -94,18 +112,19 @@ Future<T?> showPopover<T>({
       switch (side) {
         case PopoverSide.above:
           left = (rect.center.dx - w / 2).clamp(margin, screen.width - w - margin);
-          bottom = screen.height - rect.top + 10;
+          bottom = math.max(screen.height - rect.top + 10, keyboard + margin);
           top = margin;
-          maxHeight = rect.top - 10 - margin;
+          maxHeight = screen.height - bottom - margin;
         case PopoverSide.below:
           left = (rect.center.dx - w / 2).clamp(margin, screen.width - w - margin);
           top = rect.bottom + 10;
-          maxHeight = screen.height - top - margin;
+          maxHeight = screen.height - keyboard - top - margin;
         case PopoverSide.right:
           left = rect.right + 12;
           top = margin;
-          maxHeight = screen.height - margin * 2;
+          maxHeight = screen.height - keyboard - margin * 2;
       }
+      maxHeight = math.max(maxHeight, 120);
       final card = ConstrainedBox(
         constraints: BoxConstraints(maxWidth: w, maxHeight: maxHeight),
         child: Pill(
