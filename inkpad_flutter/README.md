@@ -18,6 +18,11 @@ flutter run -d macos     # or linux, windows, chrome, an Android device…
 flutter test
 ```
 
+TestFlight: every push to the `cross-platform` branch builds the iOS app on
+a GitHub Mac and uploads it to TestFlight
+([.github/workflows/testflight.yml](../.github/workflows/testflight.yml)),
+once the App Store Connect API key secrets described there are added.
+
 ## Layout
 
 | Dart | Inkpad original |
