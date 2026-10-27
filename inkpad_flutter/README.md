@@ -12,6 +12,9 @@ each Dart class notes the Inkpad class it corresponds to.
 
 ```sh
 flutter run -d macos     # or linux, windows, chrome, an Android device…
+# In Xcode (iPhone, iPad): open "Inkpad Cross-Platform.xcworkspace" at
+# the top of the repo and run the "Inkpad Cross-Platform" scheme.
+# (Inkpad.xcodeproj beside it is the original iPad app.)
 flutter test
 ```
 
