@@ -17,7 +17,7 @@
                BlueprintIdentifier = "1D6058900D05DD3D006BFB54"
                BuildableName = "Inkpad.app"
                BlueprintName = "Inkpad"
-               ReferencedContainer = "container:Inkpad.xcodeproj">
+               ReferencedContainer = "container:Inkpad (original 2013 iPad app).xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -35,7 +35,7 @@
             BlueprintIdentifier = "1D6058900D05DD3D006BFB54"
             BuildableName = "Inkpad.app"
             BlueprintName = "Inkpad"
-            ReferencedContainer = "container:Inkpad.xcodeproj">
+            ReferencedContainer = "container:Inkpad (original 2013 iPad app).xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <AdditionalOptions>
@@ -58,7 +58,7 @@
             BlueprintIdentifier = "1D6058900D05DD3D006BFB54"
             BuildableName = "Inkpad.app"
             BlueprintName = "Inkpad"
-            ReferencedContainer = "container:Inkpad.xcodeproj">
+            ReferencedContainer = "container:Inkpad (original 2013 iPad app).xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <AdditionalOptions>
@@ -77,7 +77,7 @@
             BlueprintIdentifier = "1D6058900D05DD3D006BFB54"
             BuildableName = "Inkpad.app"
             BlueprintName = "Inkpad"
-            ReferencedContainer = "container:Inkpad.xcodeproj">
+            ReferencedContainer = "container:Inkpad (original 2013 iPad app).xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
