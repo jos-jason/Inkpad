@@ -37,16 +37,16 @@ void main() {
     expect(c.selection.length, 1);
   });
 
-  test('cut, copy, paste in place; duplicate in place', () {
+  test('cut, copy, paste in place; duplicate in place', () async {
     final (c, s) = setup();
     c.selection.addAll([s[0], s[1]]);
     c.copySelection();
-    c.paste();
+    await c.paste();
     expect(c.drawing.activeLayer.elements.length, 5);
     expect(c.selection.map((e) => e.bounds), [s[0].bounds, s[1].bounds]);
     c.cutSelection();
     expect(c.drawing.activeLayer.elements.length, 3);
-    c.paste();
+    await c.paste();
     expect(c.drawing.activeLayer.elements.length, 5);
     c.selection
       ..clear()

@@ -151,6 +151,12 @@ Done:
   from inside it by tapping its name at the top. Stored as `.inkpad` files in the app's
   support folder (browser storage on the web).
 - SVG and `.inkpad` export, copy SVG to clipboard
+- Copy and paste between drawings: Copy in one, open another, Paste (in
+  place; shapes that would land off a smaller page go in its middle).
+  Copied shapes also go on the system clipboard, so they paste with
+  everything kept (live shapes, cuts, text, images) after a restart or on
+  another device through Universal Clipboard, and paste into other apps as
+  SVG; SVG copied from other apps pastes in too
 - Make mode (Settings → Make mode), for CNC routers such as the Shaper
   Origin, laser cutters and other cutting tools, inspired by Shaper Studio:
   - Exact sizes in mm (to 0.001 mm), cm or inches (decimal, or fractions

@@ -1,6 +1,6 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../geometry/make_ops.dart';
@@ -13,6 +13,7 @@ import '../model/geometry.dart';
 import '../model/style.dart';
 import '../text/font_library.dart';
 import '../tools/tool.dart';
+import 'clipboard.dart';
 import 'snapping.dart';
 
 export 'snapping.dart';
@@ -1224,13 +1225,37 @@ class DrawingController extends ChangeNotifier {
 
   // ---- Clipboard (ported from WDDrawingController copy:/paste:) ----------
 
-  List<Map<String, dynamic>> _clipboard = [];
+  /// What was last copied, in any drawing (so it pastes into another).
+  static List<Map<String, dynamic>> _clipboard = [];
 
-  bool get canPaste => _clipboard.isNotEmpty;
+  /// The system clipboard text Copy last wrote: when the clipboard still
+  /// holds it, [_clipboard] is the same thing (without decoding).
+  static String? _clipboardText;
+
+  /// Forgets what was copied (for tests).
+  @visibleForTesting
+  static void clearClipboard() {
+    _clipboard = [];
+    _clipboardText = null;
+  }
+
+  /// Paste can always try: the system clipboard may hold shapes copied
+  /// elsewhere (another device, another app, before a restart).
+  bool get canPaste => true;
 
   void copySelection() {
     if (selection.isEmpty) return;
-    _clipboard = [for (final e in orderedSelection) e.toJson()];
+    final copied = orderedSelection;
+    _clipboard = [for (final e in copied) e.toJson()];
+    final text = InkClipboard.encode(copied, drawing);
+    _clipboardText = text;
+    // Also on the system clipboard, for other drawings after a restart,
+    // other devices and other apps.
+    try {
+      Clipboard.setData(ClipboardData(text: text)).catchError((_) {});
+    } catch (_) {
+      // No system clipboard here: Inkpad's own copy still pastes.
+    }
     notifyListeners();
   }
 
@@ -1239,11 +1264,40 @@ class DrawingController extends ChangeNotifier {
     deleteSelection();
   }
 
-  /// Pastes in place into the active layer and selects the result.
-  void paste() {
-    if (_clipboard.isEmpty) return;
+  /// Pastes in place into the active layer and selects the result: what
+  /// was copied in Inkpad, or shapes (Inkpad's or any SVG) on the system
+  /// clipboard if something newer was copied there.
+  Future<void> paste() async {
+    String? text;
+    try {
+      text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+    } catch (_) {
+      text = null; // no system clipboard here
+    }
+    if (text != null && text.isNotEmpty && text != _clipboardText) {
+      final elements = InkClipboard.decode(text);
+      if (elements != null) return _paste(elements);
+    }
+    if (_clipboard.isEmpty) return showHint('Nothing to paste: copy shapes first.');
+    _paste([for (final j in _clipboard) InkElement.fromJson(j)]);
+  }
+
+  void _paste(List<InkElement> pasted) {
     checkpoint();
-    final pasted = [for (final j in _clipboard) InkElement.fromJson(j)..forgetIdentity()];
+    for (final e in pasted) {
+      e.forgetIdentity();
+    }
+    // Shapes from a bigger page that would land off this one go in its middle.
+    Rect? b;
+    for (final e in pasted) {
+      b = unionRects(b, e.bounds);
+    }
+    if (b != null && !b.overlaps(drawing.bounds)) {
+      final shift = drawing.bounds.center - b.center;
+      for (final e in pasted) {
+        e.transform(Affine.translation(shift.dx, shift.dy));
+      }
+    }
     drawing.activeLayer.elements.addAll(pasted);
     selection
       ..clear()
