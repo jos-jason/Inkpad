@@ -112,25 +112,28 @@ void main() {
       expect(img.bounds.width, closeTo(20, 1e-9));
     });
 
-    test('corner handles scale proportionally; Shift scales freely', () {
+    test('the Scale tool scales proportionally; Shift scales freely', () {
       final c = DrawingController();
       c.placeImage(fakePng(100, 50, 6));
       final img = c.selection.single as InkImage;
       final start = img.bounds; // 100 × 50
-      c.tool = SelectionTool();
-      final handle = SelectionTool.scaleHandles(start, 1)[2]; // bottom-right
-      c.tool.begin(c, ToolEvent(handle, 1));
-      c.tool.move(c, ToolEvent(handle + const Offset(100, 0), 1));
-      c.tool.end(c, ToolEvent(handle + const Offset(100, 0), 1));
-      expect(img.bounds.topLeft, start.topLeft); // anchored at the opposite corner
+      c.tool = ScaleTool();
+      void drag(Offset a, Offset b, {bool shift = false}) {
+        c.tool.begin(c, ToolEvent(a, 1, shift: shift));
+        c.tool.move(c, ToolEvent(b, 1, shift: shift));
+        c.tool.end(c, ToolEvent(b, 1, shift: shift));
+      }
+
+      // Tap to put the pivot on the top-left corner, then drag the opposite one.
+      c.tool.begin(c, ToolEvent(start.topLeft, 1));
+      c.tool.end(c, ToolEvent(start.topLeft, 1));
+      drag(start.bottomRight, start.bottomRight + const Offset(100, 0));
+      expect(img.bounds.topLeft, start.topLeft);
       expect(img.bounds.width, closeTo(200, 1e-9));
       expect(img.bounds.height, closeTo(100, 1e-9));
 
       final b = img.bounds;
-      final h2 = SelectionTool.scaleHandles(b, 1)[2];
-      c.tool.begin(c, ToolEvent(h2, 1));
-      c.tool.move(c, ToolEvent(h2 + const Offset(0, 50), 1, shift: true));
-      c.tool.end(c, ToolEvent(h2 + const Offset(0, 50), 1, shift: true));
+      drag(b.bottomRight, b.bottomRight + const Offset(0, 50), shift: true);
       expect(img.bounds.width, closeTo(200, 1e-9));
       expect(img.bounds.height, closeTo(150, 1e-9));
 
@@ -144,11 +147,10 @@ void main() {
       final p = InkPath.rect(const Rect.fromLTWH(10, 10, 10, 10))..stroke = const StrokeStyle(width: 3);
       c.addElement(p);
       c.select(p);
-      c.tool = SelectionTool();
-      final h = SelectionTool.scaleHandles(p.bounds, 1)[0]; // top-left
-      c.tool.begin(c, ToolEvent(h, 1));
-      c.tool.move(c, ToolEvent(h - const Offset(10, 10), 1));
-      expect(p.bounds, const Rect.fromLTWH(0, 0, 20, 20));
+      c.tool = ScaleTool(); // pivot at the center (15, 15)
+      c.tool.begin(c, const ToolEvent(Offset(20, 20), 1));
+      c.tool.move(c, const ToolEvent(Offset(25, 25), 1));
+      expect(p.bounds, const Rect.fromLTWH(5, 5, 20, 20));
       expect(p.stroke!.width, 3);
     });
 

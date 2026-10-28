@@ -74,15 +74,6 @@ void main() {
     expect(tool.pivot(c), const Offset(205, 205));
   });
 
-  test('select tool knob rotates about the center', () {
-    final (c, bar) = setup();
-    c.tool = SelectionTool();
-    final knob = SelectionTool.rotationKnob(bar.bounds, 1); // (50, 12) above the bar
-    drag(c, knob, const Offset(88, 50)); // to the right of center: 90° clockwise
-    expect(bar.bounds.height, closeTo(100, 1e-9));
-    expect(bar.bounds.center, near(const Offset(50, 50)));
-  });
-
   test('rotate 90° and flip commands, with undo', () {
     final (c, bar) = setup();
     c.rotateSelection(90);

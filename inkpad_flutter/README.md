@@ -53,8 +53,6 @@ Done:
   photo button; the photo library on phones). PNG, JPEG (EXIF rotation
   honoured), GIF, WebP, BMP. Placed centered and scaled down to fit, stored
   once per drawing however often they're used, and can be clipped by masks
-- Scale handles: drag a selection corner with the select tool to resize
-  (proportional; Shift for free, Alt from the center)
 - Direct Select tool (A): select points on any path (including inside
   groups, compound paths and masks) by clicking, Shift-clicking or dragging a
   marquee; drag to move them, drag a selected point's handles, double-click
@@ -130,8 +128,10 @@ Done:
   (paper, screen and sheet-goods sizes), which part of the page the
   artwork stays with, or fit the page to the artwork with a margin
 - Rulers in in/cm/mm/pt/px (Settings)
-- Scale tool (port of WDScaleTool), alongside the scale handles
-- Rotation: the knob above a selection (select tool), or the Rotate tool
+- Scale tool (port of WDScaleTool, K): tap to move the pivot, drag to scale
+  (proportional; Shift for free). As in Inkpad, the select tool has no
+  scale handles or rotation knob
+- Rotation: the Rotate tool
   (port of WDRotateTool: tap to move the pivot, drag to rotate; O). Shift
   snaps to 15°. Rotate 90° left/right and Flip horizontally/vertically
   (as in Inkpad) in the menu

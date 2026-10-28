@@ -7,10 +7,11 @@ import '../model/geometry.dart';
 import '../model/style.dart';
 import 'tool.dart';
 
-enum _Mode { none, move, anchor, handle, gradientStart, gradientEnd, textStart, scale, rotate, marquee }
+enum _Mode { none, move, anchor, handle, gradientStart, gradientEnd, textStart, marquee }
 
-/// Selects, moves, scales, rotates and node-edits. Combines Inkpad's WDSelectionTool
-/// behaviour for elements with direct editing of the selected path's nodes.
+/// Selects, moves and node-edits. Inkpad's WDSelectionTool: elements, and
+/// direct editing of the selected path's points. Scaling and rotating are
+/// the Scale and Rotate tools' jobs, as in Inkpad.
 class SelectionTool extends Tool {
   @override
   String get name => 'Select';
@@ -26,39 +27,6 @@ class SelectionTool extends Tool {
   ReflectionMode _originalMode = ReflectionMode.independent;
 
   InkStylable? _gradientShape;
-
-  // Scaling state.
-  Rect _scaleBounds = Rect.zero;
-  int _scaleCorner = 0;
-  Affine _applied = Affine.identity;
-  Offset _grab = Offset.zero;
-
-  /// Screen pixels between a selection corner and its scale handle, so the
-  /// handles never sit on top of a shape's own corner points.
-  static const handleOffset = 10.0;
-
-  /// Scale handle positions (top-left, top-right, bottom-right, bottom-left)
-  /// just outside [bounds].
-  static List<Offset> scaleHandles(Rect bounds, double viewScale) {
-    final o = handleOffset / viewScale;
-    return [
-      bounds.topLeft + Offset(-o, -o),
-      bounds.topRight + Offset(o, -o),
-      bounds.bottomRight + Offset(o, o),
-      bounds.bottomLeft + Offset(-o, o),
-    ];
-  }
-
-  /// Screen pixels from the top of the selection to its rotation knob.
-  static const knobOffset = 28.0;
-
-  /// The rotation knob, centered above [bounds].
-  static Offset rotationKnob(Rect bounds, double viewScale) =>
-      bounds.topCenter - Offset(0, knobOffset / viewScale);
-
-  Offset _rotatePivot = Offset.zero;
-
-  static List<Offset> _corners(Rect r) => [r.topLeft, r.topRight, r.bottomRight, r.bottomLeft];
 
   // Marquee state.
   Rect? marquee;
@@ -101,12 +69,10 @@ class SelectionTool extends Tool {
     _start = e.point;
     _checkpointed = false;
     final tol = e.slop();
-    final bounds = c.selectionBounds;
 
     // 1. Controls of the selection, as in Inkpad's -hitResultForPoint: the
     // nearest one within reach wins; on a tie, the first in this order
-    // (gradient ends, the selected point and its handles, other points,
-    // then this port's scale handles and rotation knob).
+    // (gradient ends, the selected point and its handles, other points).
     final controls = <(_Mode, Offset, int, HandleKind)>[];
     final shape = c.singleSelectedStylable;
     final fill = shape?.fill;
@@ -135,12 +101,6 @@ class SelectionTool extends Tool {
       for (final (i, n) in editable.nodes.indexed) {
         controls.add((_Mode.anchor, n.anchorPoint, i, HandleKind.anchor));
       }
-    }
-    if (bounds != null && c.activePath == null) {
-      for (final (i, h) in scaleHandles(bounds, e.viewScale).indexed) {
-        controls.add((_Mode.scale, h, i, HandleKind.anchor));
-      }
-      controls.add((_Mode.rotate, rotationKnob(bounds, e.viewScale), -1, HandleKind.anchor));
     }
     (_Mode, Offset, int, HandleKind)? best;
     var bestD = tol;
@@ -180,15 +140,6 @@ class SelectionTool extends Tool {
               _mode = _Mode.none;
             }
           }
-        case _Mode.scale:
-          _scaleBounds = bounds!;
-          _scaleCorner = index;
-          _applied = Affine.identity;
-          _grab = e.point;
-        case _Mode.rotate:
-          _rotatePivot = bounds!.center;
-          _applied = Affine.identity;
-          _grab = e.point;
         default:
           break;
       }
@@ -268,19 +219,6 @@ class SelectionTool extends Tool {
       case _Mode.gradientStart || _Mode.gradientEnd:
         _ensureCheckpoint(c);
         c.moveGradientHandle(_gradientShape!, start: _mode == _Mode.gradientStart, to: e.point);
-      case _Mode.scale:
-        _ensureCheckpoint(c);
-        final t = _scaleTransform(c, e);
-        // Apply only the change since the last move, so rounding never builds up.
-        c.transformSelection(_applied.inverted().then(t));
-        _applied = t;
-      case _Mode.rotate:
-        _ensureCheckpoint(c);
-        var angle = sweptAngle(_rotatePivot, _grab, e.point);
-        if (e.constrain) angle = snapAngle(angle, RotateTool.snapDegrees);
-        final t = Affine.rotationAbout(_rotatePivot, angle);
-        c.transformSelection(_applied.inverted().then(t));
-        _applied = t;
       case _Mode.textStart:
         _ensureCheckpoint(c);
         final tp = c.selection.first as InkTextPath;
@@ -318,29 +256,6 @@ class SelectionTool extends Tool {
     return raw;
   }
 
-  /// Scales about the opposite corner (or the center with Alt), keeping
-  /// proportions unless Shift is held.
-  Affine _scaleTransform(DrawingController c, ToolEvent e) {
-    final corners = _corners(_scaleBounds);
-    final corner = corners[_scaleCorner];
-    final anchor = e.alt ? _scaleBounds.center : corners[(_scaleCorner + 2) % 4];
-    // The handle sits just outside the corner, so follow the drag distance
-    // rather than the pointer position, or the first move would jump. The
-    // corner snaps (to anything but the selection itself).
-    final target = c.snapWithFeedback(corner + (e.point - _grab), e.snapTolerance, skip: c.selection.contains).point;
-    final dx = corner.dx - anchor.dx, dy = corner.dy - anchor.dy;
-    var sx = dx == 0 ? 1.0 : (target.dx - anchor.dx) / dx;
-    var sy = dy == 0 ? 1.0 : (target.dy - anchor.dy) / dy;
-    if (!e.shift) {
-      final s = sx.abs() > sy.abs() ? sx : sy;
-      sx = s;
-      sy = s;
-    }
-    // Never collapse to zero (the transform must stay invertible).
-    double clampScale(double v) => v.abs() < 0.01 ? (v.isNegative ? -0.01 : 0.01) : v;
-    return Affine.scaleAbout(anchor, clampScale(sx), clampScale(sy));
-  }
-
   @override
   void end(DrawingController c, ToolEvent e) {
     // Remember whole-selection transforms for Transform Again.
@@ -348,8 +263,6 @@ class SelectionTool extends Tool {
       switch (_mode) {
         case _Mode.move:
           c.recordTransform(Affine.translation(_moved.dx, _moved.dy));
-        case _Mode.scale || _Mode.rotate:
-          c.recordTransform(_applied);
         default:
           break;
       }

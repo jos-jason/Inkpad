@@ -80,14 +80,14 @@ void main() {
       expect(p.nodes[1].outPoint, const Offset(240, 150)); // left alone
     });
 
-    test('a point beats the scale handle just outside the corner', () {
+    test('no scale handles: dragging just outside a corner moves the corner point', () {
       final r = InkPath.rect(const Rect.fromLTWH(100, 200, 100, 100));
       c.addElement(r);
       c.select(r);
-      // 4 points from the corner, 10 from the scale handle.
-      t.begin(c, finger(const Offset(96, 197)));
-      t.move(c, finger(const Offset(76, 177)));
-      t.end(c, finger(const Offset(76, 177)));
+      // Where a scale handle used to be, 14 points out from the corner.
+      t.begin(c, finger(const Offset(90, 190)));
+      t.move(c, finger(const Offset(70, 170)));
+      t.end(c, finger(const Offset(70, 170)));
       expect(r.nodes.first.anchorPoint, const Offset(80, 180));
       expect(r.nodes[2].anchorPoint, const Offset(200, 300)); // not scaled
     });

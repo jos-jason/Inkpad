@@ -504,9 +504,6 @@ class _CanvasPainter extends CustomPainter {
         (controller.selection.length > 1 || controller.selection.any((e) => e is InkGroup))) {
       canvas.drawRect(bounds, outline);
     }
-    if (bounds != null && controller.tool is SelectionTool && controller.activePath == null) {
-      _paintScaleHandles(canvas, bounds, px);
-    }
 
     if (controller.tool is DirectSelectTool) {
       // Point editing: every path with selected points, handles on selected points only.
@@ -528,21 +525,6 @@ class _CanvasPainter extends CustomPainter {
     final shape = controller.singleSelectedStylable;
     final fill = shape?.fill;
     if (shape != null && fill is InkGradient) _paintGradientHandles(canvas, fill, shape.bounds, px);
-  }
-
-  /// Corner handles for scaling the selection with the select tool.
-  void _paintScaleHandles(Canvas canvas, Rect bounds, double px) {
-    final r = 4 * px;
-    // Rotation knob on a short stem above the selection.
-    final knob = SelectionTool.rotationKnob(bounds, scale);
-    canvas.drawLine(bounds.topCenter, knob, Paint()..color = selectionColor..strokeWidth = px);
-    canvas.drawCircle(knob, 5 * px, Paint()..color = Colors.white);
-    canvas.drawCircle(knob, 5 * px, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.5 * px..color = selectionColor);
-    for (final h in SelectionTool.scaleHandles(bounds, scale)) {
-      final box = Rect.fromCenter(center: h, width: r * 2, height: r * 2);
-      canvas.drawRect(box, Paint()..color = selectionColor);
-      canvas.drawRect(box, Paint()..style = PaintingStyle.stroke..strokeWidth = px..color = Colors.white);
-    }
   }
 
   /// The gradient's start and end, draggable with the select tool.
