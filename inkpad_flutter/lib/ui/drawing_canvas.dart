@@ -67,6 +67,19 @@ class DrawingCanvasState extends State<DrawingCanvas> {
   int? _toolPointer;
   bool _panning = false;
 
+  /// A finger's touch waits until it moves or lifts before reaching the
+  /// tool (as Inkpad's canvas did), so two fingers landing together zoom
+  /// without selecting, deselecting or nudging anything.
+  PointerDownEvent? _pendingDown;
+  int _pendingCount = 1;
+
+  /// A second finger down while the first drags: a modifier, not a zoom.
+  bool _secondary = false;
+  PointerEvent? _lastToolEvent;
+
+  /// How far (screen pixels) a finger moves before it counts as a drag.
+  static const _touchDragStart = 3.0;
+
   // Pinch state.
   double _pinchStartDistance = 0;
   double _pinchStartScale = 1;
@@ -112,9 +125,19 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       _scale,
       shift: keys.isShiftPressed,
       alt: keys.isAltPressed,
+      secondary: _secondary,
       count: count,
       touch: e.kind == PointerDeviceKind.touch,
+      pencil: e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus,
     );
+  }
+
+  /// Starts the tool with the waiting finger's touch.
+  void _beginPending() {
+    final down = _pendingDown;
+    if (down == null) return;
+    _pendingDown = null;
+    c.tool.begin(c, _event(down, count: _pendingCount));
   }
 
   // Click counting, for double clicks and double taps.
@@ -139,11 +162,18 @@ class DrawingCanvasState extends State<DrawingCanvas> {
     c.snapFeedback = null;
 
     if (_pointers.length == 2) {
-      // Second finger: abandon any tool gesture and start pinch/pan.
-      if (_toolPointer != null) {
-        c.tool.cancel(c);
-        _toolPointer = null;
+      // A second finger while the first is dragging: a modifier (Inkpad's
+      // secondary touch), applied straight away.
+      if (_toolPointer != null && _pendingDown == null) {
+        _secondary = true;
+        final last = _lastToolEvent;
+        if (last != null) c.tool.move(c, _event(last));
+        return;
       }
+      // Two fingers together: zoom and pan. The first finger's touch never
+      // reached the tool.
+      _pendingDown = null;
+      _toolPointer = null;
       _panning = false;
       final pts = _pointers.values.toList();
       _pinchStartDistance = (pts[0] - pts[1]).distance;
@@ -157,9 +187,18 @@ class DrawingCanvasState extends State<DrawingCanvas> {
         (e.buttons & (kMiddleMouseButton | kSecondaryMouseButton)) != 0;
     if (c.tool.pansView || secondary || _spaceDown) {
       _panning = true;
+      return;
+    }
+    _toolPointer = e.pointer;
+    _secondary = false;
+    _lastToolEvent = e;
+    final count = _countTap(e);
+    if (e.kind == PointerDeviceKind.touch) {
+      // Wait to see whether a second finger follows.
+      _pendingDown = e;
+      _pendingCount = count;
     } else {
-      _toolPointer = e.pointer;
-      c.tool.begin(c, _event(e, count: _countTap(e)));
+      c.tool.begin(c, _event(e, count: count));
     }
   }
 
@@ -167,7 +206,17 @@ class DrawingCanvasState extends State<DrawingCanvas> {
     if (!_pointers.containsKey(e.pointer)) return;
     _pointers[e.pointer] = e.localPosition;
 
-    if (_pointers.length == 2) {
+    if (e.pointer == _toolPointer) {
+      final down = _pendingDown;
+      if (down != null) {
+        if ((e.localPosition - down.localPosition).distance < _touchDragStart) return;
+        _beginPending();
+      }
+      _lastToolEvent = e;
+      c.tool.move(c, _event(e));
+    } else if (_toolPointer != null) {
+      // The modifier finger moving: nothing to do.
+    } else if (_pointers.length == 2) {
       final pts = _pointers.values.toList();
       final focal = (pts[0] + pts[1]) / 2;
       final dist = (pts[0] - pts[1]).distance;
@@ -179,8 +228,6 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       });
     } else if (_panning) {
       setState(() => _offset += e.delta);
-    } else if (e.pointer == _toolPointer) {
-      c.tool.move(c, _event(e));
     }
   }
 
@@ -188,15 +235,25 @@ class DrawingCanvasState extends State<DrawingCanvas> {
     _pointers.remove(e.pointer);
     if (e.pointer == _toolPointer) {
       if (e is PointerCancelEvent) {
+        _pendingDown = null;
         c.tool.cancel(c);
       } else {
+        // A tap: the tool sees it begin and end.
+        _beginPending();
         c.tool.end(c, _event(e));
       }
       _toolPointer = null;
+      _secondary = false;
+      _lastToolEvent = null;
       if (c.snapFeedback != null) {
         c.snapFeedback = null;
         c.changed();
       }
+    } else if (_toolPointer != null && _secondary && _pointers.length < 2) {
+      // The modifier finger lifted: back to plain dragging.
+      _secondary = false;
+      final last = _lastToolEvent;
+      if (last != null) c.tool.move(c, _event(last));
     }
     if (_pointers.isEmpty) _panning = false;
   }
@@ -458,9 +515,14 @@ class _CanvasPainter extends CustomPainter {
         _paintNodes(canvas, p, px, selected: selected);
       }
     } else {
-      final path = controller.activePath ?? controller.singleSelectedPath;
+      final active = controller.activePath;
+      final path = active ?? controller.singleSelectedPath;
       // A live shape's points aren't edited directly, so they aren't shown.
-      if (path != null && path.live == null) _paintNodes(canvas, path, px);
+      // As in Inkpad, only the selected point shows its handles (the path
+      // being drawn shows all of its own).
+      if (path != null && path.live == null) {
+        _paintNodes(canvas, path, px, selected: active != null ? null : (controller.selectedNodes[path] ?? const {}));
+      }
     }
 
     final shape = controller.singleSelectedStylable;

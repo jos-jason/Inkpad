@@ -72,7 +72,7 @@ class ShapeTool extends Tool {
     final make = c.drawing.makeMode;
 
     if (kind == ShapeKind.line) {
-      if (e.shift) {
+      if (e.constrain) {
         final d = end - _start;
         final angle = (math.atan2(d.dy, d.dx) / (math.pi / 4)).round() * (math.pi / 4);
         end = _start + Offset(math.cos(angle), math.sin(angle)) * d.distance;
@@ -82,7 +82,7 @@ class ShapeTool extends Tool {
     }
 
     var d = end - _start;
-    if (e.shift) {
+    if (e.constrain) {
       final side = math.max(d.dx.abs(), d.dy.abs());
       d = Offset(side * d.dx.sign, side * d.dy.sign);
     }

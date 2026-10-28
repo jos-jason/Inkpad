@@ -20,7 +20,7 @@ class SnapResult {
 
 /// Screen pixels within which points and edges attract: Inkpad used 25 for
 /// fingers (kNodeSelectionTolerance); a mouse pointer needs less.
-const snapPixelsTouch = 25.0, snapPixelsMouse = 10.0;
+const snapPixelsTouch = 25.0, snapPixelsPencil = 12.0, snapPixelsMouse = 10.0;
 
 /// Snapping, ported from -[WDDrawingController snappedPoint:viewScale:snapFlags:]:
 /// to anchor points, then path edges (including the page edges), then the

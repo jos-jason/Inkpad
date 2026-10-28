@@ -30,6 +30,7 @@ class DirectSelectTool extends Tool {
   int _handleIndex = 0;
   HandleKind _handle = HandleKind.inPoint;
   ReflectionMode _reflection = ReflectionMode.independent;
+  Offset _handleStart = Offset.zero;
 
   Rect? marquee;
   Map<InkPath, Set<int>> _base = {};
@@ -52,31 +53,49 @@ class DirectSelectTool extends Tool {
     final paths = all.where((p) => p.live == null);
     final liveHit = all.where((p) => p.live != null).any((p) => p.anchorIndexAt(e.point, tol) != null || p.hitTest(e.point, tol));
 
-    // 1. Handles of selected points.
+    // 1. The selected points and their handles, then any point: the
+    // nearest within reach wins (Inkpad's -hitResultForPoint order).
+    (InkPath, int, HandleKind)? best;
+    var bestD = tol;
+    void consider(InkPath path, int i, HandleKind kind, Offset at) {
+      final d = (at - e.point).distance;
+      if (d < bestD) {
+        bestD = d;
+        best = (path, i, kind);
+      }
+    }
+
     for (final MapEntry(key: path, value: indices) in c.selectedNodes.entries) {
       for (final i in indices) {
         if (i >= path.nodes.length) continue;
         final n = path.nodes[i];
-        final kind = n.hasOutPoint && (n.outPoint - e.point).distance < tol
-            ? HandleKind.outPoint
-            : n.hasInPoint && (n.inPoint - e.point).distance < tol
-                ? HandleKind.inPoint
-                : null;
-        if (kind != null) {
-          _mode = _Mode.handle;
-          _handlePath = path;
-          _handleIndex = i;
-          _handle = kind;
-          _reflection = n.reflectionMode;
-          return;
+        consider(path, i, HandleKind.anchor, n.anchorPoint);
+        if (n.hasOutPoint) consider(path, i, HandleKind.outPoint, n.outPoint);
+        if (n.hasInPoint) consider(path, i, HandleKind.inPoint, n.inPoint);
+      }
+    }
+    if (best == null) {
+      for (final path in paths) {
+        for (final (i, n) in path.nodes.indexed) {
+          consider(path, i, HandleKind.anchor, n.anchorPoint);
         }
       }
     }
+    final picked = best;
+    if (picked != null && picked.$3 != HandleKind.anchor) {
+      final (path, i, kind) = picked;
+      _mode = _Mode.handle;
+      _handlePath = path;
+      _handleIndex = i;
+      _handle = kind;
+      _reflection = path.nodes[i].reflectionMode;
+      _handleStart = kind == HandleKind.outPoint ? path.nodes[i].outPoint : path.nodes[i].inPoint;
+      return;
+    }
 
-    // 2. Anchor points.
-    for (final path in paths) {
-      final i = path.anchorIndexAt(e.point, tol);
-      if (i == null) continue;
+    // 2. A point.
+    if (picked != null) {
+      final (path, i, _) = picked;
       if (e.count == 2) {
         c.checkpoint();
         path.convertAnchor(i);
@@ -138,7 +157,7 @@ class DirectSelectTool extends Tool {
     switch (_mode) {
       case _Mode.nodes:
         _ensureCheckpoint(c);
-        var want = e.point - _start;
+        var want = e.constrain ? constrain45(e.point - _start) : e.point - _start;
         final grab = _grabAnchor;
         if (grab != null) {
           final selected = c.selectedNodes;
@@ -157,8 +176,9 @@ class DirectSelectTool extends Tool {
         _ensureCheckpoint(c);
         final p = _handlePath!;
         final i = _handleIndex;
-        final mode = e.alt ? ReflectionMode.independent : _reflection;
-        final to = c.snapWithFeedback(e.point, e.snapTolerance, skipNode: (path, j) => identical(path, p) && j == i).point;
+        final mode = e.independent ? ReflectionMode.independent : _reflection;
+        // Follows the drag, so a handle grabbed off-center doesn't jump under the finger.
+        final to = c.snapWithFeedback(_handleStart + (e.point - _start), e.snapTolerance, skipNode: (path, j) => identical(path, p) && j == i).point;
         p.nodes[i] = p.nodes[i].moveControlHandle(_handle, to, mode);
         c.changed();
       case _Mode.marquee:

@@ -146,3 +146,11 @@ String fmt(double v) {
   s = s.replaceFirst(RegExp(r'0+$'), '');
   return s.endsWith('.') ? s.substring(0, s.length - 1) : s;
 }
+
+/// [d] kept to the nearest multiple of 45°, its length unchanged (Inkpad's
+/// WDConstrainPoint, for Shift or a second finger while dragging).
+Offset constrain45(Offset d) {
+  if (d == Offset.zero) return d;
+  final angle = (math.atan2(d.dy, d.dx) / (math.pi / 4)).round() * (math.pi / 4);
+  return Offset(math.cos(angle), math.sin(angle)) * d.distance;
+}

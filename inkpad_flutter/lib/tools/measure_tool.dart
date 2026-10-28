@@ -28,7 +28,7 @@ class MeasureTool extends Tool {
     final a = from;
     if (a == null) return;
     var b = c.snapWithFeedback(e.point, e.snapTolerance).point;
-    if (e.shift) {
+    if (e.constrain) {
       final d = b - a;
       final step = math.pi / 12;
       final angle = (math.atan2(d.dy, d.dx) / step).round() * step;

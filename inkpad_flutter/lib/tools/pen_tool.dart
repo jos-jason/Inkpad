@@ -73,10 +73,10 @@ class PenTool extends Tool {
     final active = c.activePath;
     final pt = c.snapWithFeedback(e.point, e.snapTolerance, skipNode: (p, i) => identical(p, active) && i == index).point;
     if (_closingPath) {
-      final mode = e.alt ? ReflectionMode.independent : _oldMode;
+      final mode = e.independent ? ReflectionMode.independent : _oldMode;
       _replacement = r.setInPoint(pt, mode);
     } else {
-      final mode = e.alt
+      final mode = e.independent
           ? ReflectionMode.independent
           : (_updatingOldNode ? _oldMode : ReflectionMode.reflect);
       _replacement = r.moveControlHandle(HandleKind.outPoint, pt, mode);

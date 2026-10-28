@@ -49,7 +49,7 @@ abstract class TransformTool extends Tool {
       _moved = true;
     }
     final pt = c.snapWithFeedback(e.point, e.snapTolerance, skip: c.selection.contains).point;
-    final t = computeTransform(_start, pt, p, shift: e.shift);
+    final t = computeTransform(_start, pt, p, shift: e.constrain);
     // Apply only the change since the last move, so rounding never builds up.
     c.transformSelection(_applied.inverted().then(t));
     _applied = t;

@@ -26,20 +26,39 @@ class ToolEvent {
   /// Shift: constrain. Alt/Option: independent handles / draw from center.
   final bool shift, alt;
 
+  /// A second finger on the screen while dragging with the first: as in
+  /// Inkpad, it constrains (like Shift) or breaks handles apart (like
+  /// Option), whichever the tool uses.
+  final bool secondary;
+
   /// 1 for a single click or tap, 2 for a double, and so on.
   /// Ported from WDEvent's count.
   final int count;
 
-  /// From a finger (bigger targets) rather than a mouse or pen.
-  final bool touch;
+  /// From a finger (bigger targets) or an Apple Pencil or other stylus,
+  /// rather than a mouse.
+  final bool touch, pencil;
 
-  const ToolEvent(this.point, this.viewScale, {this.shift = false, this.alt = false, this.count = 1, this.touch = false});
+  const ToolEvent(this.point, this.viewScale,
+      {this.shift = false, this.alt = false, this.secondary = false, this.count = 1, this.touch = false, this.pencil = false});
 
-  /// Hit tolerance of [pixels] screen pixels, in document units.
-  double slop([double pixels = 8]) => pixels / viewScale;
+  /// Shift or a second finger: keep to straight lines, squares, 45°.
+  bool get constrain => shift || secondary;
+
+  /// Option/Alt or a second finger: move a handle without its partner.
+  bool get independent => alt || secondary;
+
+  /// How close (screen pixels) a point must be to grab it: a fingertip's
+  /// reach as in Inkpad (kNodeSelectionTolerance, 25), less for a Pencil
+  /// or a mouse, which are precise.
+  double get reach => touch ? 25 : (pencil ? 12 : 8);
+
+  /// Hit tolerance in document units: [pixels] for a mouse, scaled up in
+  /// the same proportion for a Pencil or a finger.
+  double slop([double pixels = 8]) => pixels * reach / 8 / viewScale;
 
   /// How close (in document units) a point or edge must be to snap.
-  double get snapTolerance => (touch ? snapPixelsTouch : snapPixelsMouse) / viewScale;
+  double get snapTolerance => (touch ? snapPixelsTouch : (pencil ? snapPixelsPencil : snapPixelsMouse)) / viewScale;
 }
 
 /// Base class for canvas tools. Ported from WDTool.
