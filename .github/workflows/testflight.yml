@@ -1,0 +1,79 @@
+# Builds the cross-platform app (inkpad_flutter) on a GitHub Mac and uploads
+# it to TestFlight whenever the cross-platform branch changes.
+#
+# Needs three repository secrets (Settings → Secrets and variables →
+# Actions), from App Store Connect → Users and Access → Integrations →
+# App Store Connect API (a Team key with the App Manager role):
+#   ASC_KEY_ID      the key's ID
+#   ASC_ISSUER_ID   the Issuer ID shown above the keys
+#   ASC_KEY_P8      the contents of the downloaded AuthKey_….p8 file
+# Without them it still builds (unsigned), to check the app compiles.
+#
+# Signing is cloud-managed: Xcode signs the export with the team's Apple
+# Distribution certificate through the API key, so no certificates or
+# profiles are stored here.
+name: TestFlight
+
+on:
+  push:
+    branches: [cross-platform]
+    paths: ['inkpad_flutter/**', '.github/workflows/testflight.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: testflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash  # with pipefail, so a failed xcodebuild fails the step
+        working-directory: inkpad_flutter
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.5
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Tests
+        run: flutter test
+
+      # Each run gets a higher build number (re-runs too), as TestFlight needs.
+      - name: Configure the iOS build
+        run: flutter build ios --release --config-only --build-number=$(( GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT ))
+
+      # Unsigned here; the export below signs it for the App Store.
+      - name: Archive
+        working-directory: inkpad_flutter/ios
+        run: >
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release
+          -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/Inkpad.xcarchive"
+          archive CODE_SIGNING_ALLOWED=NO | tail -n 20
+
+      - name: Sign and upload to TestFlight
+        if: env.ASC_KEY_ID != ''
+        working-directory: inkpad_flutter/ios
+        run: |
+          key="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$key"
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Inkpad.xcarchive" \
+            -exportOptionsPlist ExportOptions.plist -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$key" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          rm -f "$key"
+
+      - name: No App Store Connect key yet
+        if: env.ASC_KEY_ID == ''
+        run: echo "::notice::Built, but not uploaded — add the ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 secrets to upload to TestFlight."
