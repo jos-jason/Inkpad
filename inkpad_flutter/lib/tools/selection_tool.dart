@@ -124,6 +124,13 @@ class SelectionTool extends Tool {
           _originalMode = n.reflectionMode;
           _anchorStart = n.anchorPoint;
           _handleStart = kind == HandleKind.outPoint ? n.outPoint : (kind == HandleKind.inPoint ? n.inPoint : n.anchorPoint);
+          if (mode == _Mode.handle && e.count == 2) {
+            // Double-tap a handle: remove just that half.
+            c.checkpoint();
+            p.nodes[index] = kind == HandleKind.outPoint ? n.chopOutHandle() : n.chopInHandle();
+            c.changed();
+            _mode = _Mode.none;
+          }
           if (mode == _Mode.anchor) {
             // Tap a point to select it (only it, unless Shift); its handles show.
             final selected = c.selectedNodes[p] ?? const <int>{};

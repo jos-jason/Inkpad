@@ -80,6 +80,13 @@ void main() {
       expect(p.nodes[1].outPoint, const Offset(240, 150)); // left alone
     });
 
+    test('double-tap a handle of the selected point to remove just that half', () {
+      c.setSelectedNodes({p: {1}});
+      tap(c, t, finger(const Offset(158, 103), count: 2)); // near the in handle (160,100)
+      expect(p.nodes[1].hasInPoint, isFalse);
+      expect(p.nodes[1].outPoint, const Offset(240, 100));
+    });
+
     test('no scale handles: dragging just outside a corner moves the corner point', () {
       final r = InkPath.rect(const Rect.fromLTWH(100, 200, 100, 100));
       c.addElement(r);

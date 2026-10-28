@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inkpad/controller/drawing_controller.dart';
+import 'package:inkpad/model/bezier_node.dart';
 import 'package:inkpad/model/element.dart';
 import 'package:inkpad/model/style.dart';
 import 'package:inkpad/tools/tool.dart';
@@ -84,5 +85,25 @@ void main() {
     tap(c, const Offset(400, 100)); // taking b away drops its points
     expect(c.selectedNodes, {a: {1}});
     expect(c.selection, {a});
+  });
+
+  test('double-tap a handle to remove just that half', () {
+    final curve = InkPath(nodes: [
+      const BezierNode.anchor(Offset(0, 400)),
+      const BezierNode(Offset(60, 400), Offset(100, 400), Offset(140, 400)),
+      const BezierNode.anchor(Offset(200, 400)),
+    ])
+      ..stroke = const StrokeStyle(width: 2);
+    c.drawing.activeLayer.elements.add(curve);
+    tap(c, const Offset(150, 400)); // the curve
+    tap(c, const Offset(102, 402)); // its middle point: handles show
+    expect(c.selectedNodes[curve], {1});
+    c.tool.begin(c, ToolEvent(const Offset(138, 402), 1, touch: true, count: 2));
+    c.tool.end(c, ToolEvent(const Offset(138, 402), 1, touch: true, count: 2));
+    final n = curve.nodes[1];
+    expect(n.hasOutPoint, isFalse);
+    expect(n.inPoint, const Offset(60, 400)); // the other half stays
+    c.undo();
+    expect((c.drawing.activeLayer.elements.last as InkPath).nodes[1].outPoint, const Offset(140, 400));
   });
 }

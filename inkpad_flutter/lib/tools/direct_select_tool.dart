@@ -18,7 +18,8 @@ enum _Mode { none, objects, points, handle, marquee }
 ///    closer);
 ///  * drag a selected point to move all the selected points;
 ///  * drag a selected point's handle to reshape (Alt or a second finger
-///    breaks the symmetry); double-tap a point to add or remove handles;
+///    breaks the symmetry); double-tap a point to add or remove handles,
+///    or a handle to remove just that one;
 ///  * drag on empty space to add the points in a rectangle; tap empty
 ///    space to select nothing;
 ///  * Delete removes the selected points (or, with none, the objects).
@@ -104,6 +105,14 @@ class DirectSelectTool extends Tool {
     if (picked != null && picked.$3 != HandleKind.anchor) {
       final (path, i, kind) = picked;
       final n = path.nodes[i];
+      if (e.count == 2) {
+        // Double-tap a handle: remove just that half.
+        c.checkpoint();
+        path.nodes[i] = kind == HandleKind.outPoint ? n.chopOutHandle() : n.chopInHandle();
+        c.changed();
+        _mode = _Mode.none;
+        return;
+      }
       _mode = _Mode.handle;
       _handlePath = path;
       _handleIndex = i;

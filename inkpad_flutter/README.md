@@ -59,7 +59,8 @@ Done:
   to move them all. Selected objects show their points: tap points to add
   them (on any path, including inside groups, compound paths and masks),
   drag a selected point to move all the selected points, drag a selected
-  point's handles, double-tap to add/remove handles; drag on empty space
+  point's handles, double-tap a point to add/remove its handles or a
+  handle to remove just that one; drag on empty space
   to add the points in a rectangle, tap it to select nothing; Delete
   removes the selected points
 - Path menu (ported from Inkpad's): add / delete anchor points, join paths,
