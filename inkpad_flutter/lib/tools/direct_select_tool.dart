@@ -16,7 +16,8 @@ enum _Mode { none, objects, points, handle, marquee }
 ///  * selected objects show their points: tap a point to add it, tap it
 ///    again to remove it (points of other objects can be picked too, from
 ///    closer);
-///  * drag a selected point to move all the selected points;
+///  * drag a selected point to move all the selected points (with several
+///    objects selected, any drag moves the objects whole);
 ///  * drag a selected point's handle to reshape (Alt or a second finger
 ///    breaks the symmetry); double-tap a point to add or remove handles,
 ///    or a handle to remove just that one;
@@ -182,7 +183,10 @@ class DirectSelectTool extends Tool {
     if (e.point != _start) _moved = true;
     var drag = e.point - _start;
     if (e.constrain) drag = constrain45(drag);
-    switch (_mode) {
+    // With several objects selected, a drag always moves them whole (every
+    // point of every one), never just some points of one.
+    final mode = _mode == _Mode.points && c.selection.length > 1 ? _Mode.objects : _mode;
+    switch (mode) {
       case _Mode.objects:
         _ensureCheckpoint(c);
         var want = drag;

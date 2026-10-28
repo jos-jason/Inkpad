@@ -58,7 +58,8 @@ Done:
   selected takes it away. Tap objects to add them; drag any selected one
   to move them all. Selected objects show their points: tap points to add
   them (on any path, including inside groups, compound paths and masks),
-  drag a selected point to move all the selected points, drag a selected
+  drag a selected point to move all the selected points (with several
+  objects selected, any drag moves the objects whole), drag a selected
   point's handles, double-tap a point to add/remove its handles or a
   handle to remove just that one; drag on empty space
   to add the points in a rectangle, tap it to select nothing; Delete

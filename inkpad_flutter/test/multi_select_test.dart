@@ -82,9 +82,18 @@ void main() {
     tap(c, const Offset(198, 2));
     tap(c, const Offset(302, 2));
     expect(c.selectedNodes, {a: {1}, b: {0}});
-    tap(c, const Offset(400, 100)); // taking b away drops its points
+    // With both objects selected, dragging a point moves both objects whole.
+    drag(c, const Offset(198, 2), const Offset(208, 12));
+    expect(a.bounds.topLeft, const Offset(10, 10));
+    expect(a.bounds.size, const Size(200, 200)); // not reshaped
+    expect(b.bounds.topLeft, const Offset(310, 10));
+    tap(c, const Offset(410, 110)); // taking b away drops its points
     expect(c.selectedNodes, {a: {1}});
     expect(c.selection, {a});
+    // With one object, dragging its selected point moves just that point.
+    drag(c, const Offset(210, 10), const Offset(230, 10));
+    expect(a.nodes[1].anchorPoint, const Offset(230, 10));
+    expect(a.nodes[0].anchorPoint, const Offset(10, 10));
   });
 
   test('double-tap a handle to remove just that half', () {

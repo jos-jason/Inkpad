@@ -35,16 +35,16 @@ void main() {
       c.tool = DirectSelectTool();
     });
 
-    test('click selects one point; shift adds points on other paths; drag moves them all', () {
+    test('click selects a point; a point on another path is added; with two objects a drag moves them whole', () {
       click(c, const Offset(100, 0));
       expect(c.selectedNodes, {a: {1}});
       expect(c.selection, {a}); // the owner, for the style panels
-      click(c, const Offset(200, 0), shift: true);
+      click(c, const Offset(200, 0));
       expect(c.selectedNodes, {a: {1}, b: {0}});
       drag(c, const Offset(100, 0), const Offset(110, 5));
       expect(a.nodes[1].anchorPoint, const Offset(110, 5));
       expect(b.nodes[0].anchorPoint, const Offset(210, 5));
-      expect(a.nodes[0].anchorPoint, Offset.zero); // unselected points stay
+      expect(a.nodes[0].anchorPoint, const Offset(10, 5)); // the whole object moved
       c.undo();
       expect((c.drawing.activeLayer.elements.first as InkPath).nodes[1].anchorPoint, const Offset(100, 0));
       expect(c.selectedNodes, isEmpty);
