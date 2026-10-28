@@ -1165,8 +1165,9 @@ class DrawingController extends ChangeNotifier {
 
   void selectNone() {
     endEditing();
-    if (selection.isEmpty) return;
+    if (selection.isEmpty && selectedNodes.isEmpty) return;
     selection.clear();
+    selectedNodes.clear();
     notifyListeners();
   }
 
@@ -1480,14 +1481,50 @@ class DrawingController extends ChangeNotifier {
 
   /// Replaces the point selection; the containing elements become the
   /// selection, so the style panels apply to them.
-  void setSelectedNodes(Map<InkPath, Set<int>> nodes) {
+  /// Selects exactly [nodes]; the objects selected become their owners
+  /// (or, with [keepObjects], the owners are added to the selection).
+  void setSelectedNodes(Map<InkPath, Set<int>> nodes, {bool keepObjects = false}) {
     selectedNodes
       ..clear()
       ..addAll({for (final e in nodes.entries) if (e.value.isNotEmpty) e.key: {...e.value}});
     final owners = pathOwners();
-    selection
-      ..clear()
-      ..addAll([for (final p in selectedNodes.keys) if (owners[p] != null) owners[p]!]);
+    if (!keepObjects) selection.clear();
+    selection.addAll([for (final p in selectedNodes.keys) if (owners[p] != null) owners[p]!]);
+    notifyListeners();
+  }
+
+  // ---- Multi-select: adding and taking away, one at a time ----------------
+
+  /// Adds [e] to the selection (keeping what's selected).
+  void addToSelection(InkElement e) {
+    if (!identical(e, editingText)) endEditing();
+    selection.add(e);
+    notifyListeners();
+  }
+
+  /// Takes [e] out of the selection, with any of its selected points.
+  void removeFromSelection(InkElement e) {
+    selection.remove(e);
+    final owners = pathOwners();
+    selectedNodes.removeWhere((p, _) => identical(owners[p], e));
+    notifyListeners();
+  }
+
+  /// Adds point [index] of [path] (part of [owner]) to the selected points,
+  /// and [owner] to the selected objects.
+  void selectPoint(InkPath path, int index, InkElement owner) {
+    (selectedNodes[path] ??= {}).add(index);
+    selection.add(owner);
+    notifyListeners();
+  }
+
+  /// Takes point [index] of [path] out of the selected points (its object
+  /// stays selected).
+  void deselectPoint(InkPath path, int index) {
+    final set = selectedNodes[path];
+    if (set == null) return;
+    set.remove(index);
+    if (set.isEmpty) selectedNodes.remove(path);
     notifyListeners();
   }
 

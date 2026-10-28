@@ -506,10 +506,15 @@ class _CanvasPainter extends CustomPainter {
     }
 
     if (controller.tool is DirectSelectTool) {
-      // Point editing: every path with selected points, handles on selected points only.
-      for (final MapEntry(key: p, value: selected) in controller.selectedNodes.entries) {
+      // Multi-select: the points of every selected object (and any path with
+      // selected points), handles on selected points only.
+      final paths = {
+        for (final MapEntry(key: p, value: owner) in controller.pathOwners().entries)
+          if (p.live == null && (controller.selection.contains(owner) || controller.selectedNodes.containsKey(p))) p,
+      };
+      for (final p in paths) {
         canvas.drawPath(p.toFlutterPath(), outline);
-        _paintNodes(canvas, p, px, selected: selected);
+        _paintNodes(canvas, p, px, selected: controller.selectedNodes[p] ?? const {});
       }
     } else {
       final active = controller.activePath;

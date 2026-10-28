@@ -57,13 +57,13 @@ void main() {
       expect(c.selectedNodes, {a: {1}});
     });
 
-    test('marquee selects points across paths; clicking an outline selects all its points', () {
+    test('marquee adds the points inside it; tapping empty space selects nothing', () {
       drag(c, const Offset(50, -10), const Offset(250, 50));
       expect(c.selectedNodes, {a: {1}, b: {0}});
-      click(c, const Offset(250, 100)); // bottom edge of b
-      expect(c.selectedNodes, {b: {0, 1, 2, 3}});
+      expect(c.selection, {a, b});
       click(c, const Offset(150, 300)); // empty: clears
       expect(c.selectedNodes, isEmpty);
+      expect(c.selection, isEmpty);
     });
 
     test('handles of selected points, double-click, delete', () {
@@ -74,9 +74,10 @@ void main() {
       expect(a.nodes[1].outPoint, out + const Offset(0, 20));
       expect(a.nodes[1].isCorner, isFalse); // the opposite handle followed
 
-      click(c, const Offset(0, 0));
+      click(c, const Offset(0, 0)); // adds a second point
+      expect(c.selectedNodes, {a: {0, 1}});
       c.deleteSelection(); // Delete removes points, not the shape
-      expect(a.nodes.length, 3);
+      expect(a.nodes.length, 2);
       expect(c.drawing.activeLayer.elements.length, 2);
     });
 

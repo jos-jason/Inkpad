@@ -104,7 +104,7 @@ class _EditorPageState extends State<EditorPage> {
 
   late final List<Object> _palette = [
     PaletteTool('Select', const ToolIcon(ToolIcon.arrow), _select, shortcut: 'V'),
-    PaletteTool('Direct Select', const ToolIcon(ToolIcon.directSelect), _direct, shortcut: 'A'),
+    PaletteTool('Multi-Select', const ToolIcon(ToolIcon.directSelect), _direct, shortcut: 'A'),
     PaletteTool('Pen', const ToolIcon(ToolIcon.pen), _pen, shortcut: 'P'),
     PaletteTool('Add/Delete Point', const ToolIcon(ToolIcon.addAnchor), _anchor, shortcut: 'N'),
     PaletteTool('Scissors', const Icon(Icons.content_cut), _scissors, shortcut: 'C'),

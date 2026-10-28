@@ -53,10 +53,15 @@ Done:
   photo button; the photo library on phones). PNG, JPEG (EXIF rotation
   honoured), GIF, WebP, BMP. Placed centered and scaled down to fit, stored
   once per drawing however often they're used, and can be clipped by masks
-- Direct Select tool (A): select points on any path (including inside
-  groups, compound paths and masks) by clicking, Shift-clicking or dragging a
-  marquee; drag to move them, drag a selected point's handles, double-click
-  to add/remove handles, Delete to remove points
+- Multi-Select tool (A, the arrow with a plus; Inkpad's group select):
+  every tap adds to the selection, and a tap on something already
+  selected takes it away. Tap objects to add them; drag any selected one
+  to move them all. Selected objects show their points: tap points to add
+  them (on any path, including inside groups, compound paths and masks),
+  drag a selected point to move all the selected points, drag a selected
+  point's handles, double-tap to add/remove handles; drag on empty space
+  to add the points in a rectangle, tap it to select nothing; Delete
+  removes the selected points
 - Path menu (ported from Inkpad's): add / delete anchor points, join paths,
   outline stroke (keeps any fill beneath), combine / separate paths, reverse
   direction, unite / intersect / subtract front / exclude, mask / unmask.
@@ -266,7 +271,7 @@ To port next (roughly in priority order; greyed out in the UI):
 
 ## Keyboard shortcuts
 
-V select · A direct select · O rotate · K scale · P pen · N add/delete point ·
+V select · A multi-select · O rotate · K scale · P pen · N add/delete point ·
 C scissors · B brush · F freehand · Shift+E eraser · I eyedropper · T text · M measure · J joinery · D constraints · R rect · E oval · S star · G polygon · L line · H hand ·
 Ctrl/Cmd+Z undo · Shift+Ctrl/Cmd+Z redo · Ctrl/Cmd+D duplicate ·
 Ctrl/Cmd+G group · Shift+Ctrl/Cmd+G ungroup · Ctrl/Cmd+S save now ·
