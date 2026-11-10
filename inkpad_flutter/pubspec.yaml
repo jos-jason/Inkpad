@@ -45,6 +45,12 @@ dependencies:
   vector_math: ^2.4.3
   http: ^1.6.0
   flutter_secure_storage: ^11.2.0
+  # Sync with the NAS: github.com/jos-jason/nas-sync
+  nas_sync:
+    git:
+      url: https://github.com/jos-jason/nas-sync.git
+      path: dart/nas_sync
+      ref: 5ce438e
 
 dev_dependencies:
   integration_test:

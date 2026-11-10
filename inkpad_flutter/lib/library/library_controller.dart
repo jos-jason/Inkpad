@@ -186,6 +186,40 @@ class LibraryController extends ChangeNotifier {
     }
   }
 
+  // ---- Sync: versions from other devices ------------------------------------
+  // These change the library without saving through [store]; the sync layer
+  // has already written the files.
+
+  DrawingInfo? byId(String id) => _drawings.where((d) => d.id == id).firstOrNull;
+
+  /// Puts in a drawing as another device saved it, updating the existing
+  /// object in place so an editor holding it keeps working. If that editor
+  /// saves again, its edit is newer and wins on the next sync.
+  void applyRemote(DrawingInfo remote) {
+    final existing = byId(remote.id);
+    if (existing == null) {
+      _drawings.add(remote);
+    } else {
+      existing
+        ..name = remote.name
+        ..modified = remote.modified
+        ..drawing = remote.drawing
+        ..portfolio = remote.portfolio;
+    }
+    _sort();
+    notifyListeners();
+  }
+
+  void removeRemote(String id) {
+    _drawings.removeWhere((d) => d.id == id);
+    notifyListeners();
+  }
+
+  void applyRemotePortfolios(List<PortfolioInfo> all) {
+    _portfolios = [...all];
+    notifyListeners();
+  }
+
   // ---- Search ----------------------------------------------------------------
 
   /// Drawings matching [query]: every word must appear in the drawing's

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../library/drawing_store.dart';
 import '../library/library_controller.dart';
+import '../sync/inkpad_sync.dart';
 import 'drawing_thumbnail.dart';
 import 'editor_page.dart';
 import 'file_actions.dart';
+import 'sync_page.dart';
 
 enum _Action { open, rename, duplicate, move, exportSvg, exportInkpad, delete }
 
@@ -228,6 +230,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     ),
                   ),
             actions: [
+              if (p == null && InkpadSync.instance != null) SyncButton(sync: InkpadSync.instance!),
               if (p == null)
                 IconButton(
                   tooltip: 'New portfolio',

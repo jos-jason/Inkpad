@@ -423,6 +423,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.19.0"
+  nas_sync:
+    dependency: "direct main"
+    description:
+      path: "dart/nas_sync"
+      ref: "5ce438e"
+      resolved-ref: "5ce438e0d497abebe6c75bccdec4ba73a946ec4c"
+      url: "https://github.com/jos-jason/nas-sync.git"
+    source: git
+    version: "0.1.0"
   objective_c:
     dependency: transitive
     description:
